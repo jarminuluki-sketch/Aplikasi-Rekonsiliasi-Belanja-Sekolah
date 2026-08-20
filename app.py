@@ -69,7 +69,7 @@ def auto_detect_columns(df):
     if not ang_col and len(cols) > 3: ang_col = cols[3]
     return tgl_col, nom_col, ket_col, ang_col
 
-def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items):
+def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=30, rightMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
@@ -86,6 +86,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items):
     style_meta = ParagraphStyle('Meta', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=12)
     story.append(Paragraph(f"<b>Nama Sekolah:</b> {sekolah_name}", style_meta))
     story.append(Paragraph(f"<b>Tanggal Rekonsiliasi:</b> {tanggal_submit}", style_meta))
+    story.append(Paragraph(f"<b>Status Verifikasi:</b> {status_rekon}", style_meta))
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("Pada hari ini telah dilakukan rekonsiliasi data pencatatan Belanja Sekolah antara Laporan Realisasi Belanja (SIPD) dengan Catatan BKU (ARKAS) dengan hasil rincian sebagai berikut:", style_meta))
@@ -179,16 +180,6 @@ if not st.session_state['logged_in']:
             try:
                 res = supabase.table("users").select("*").execute()
                 all_users = res.data if res.data else []
-                
-                # Buatkan otomatis akun admin utama jika tabel terdeteksi kosong
-                if not all_users:
-                    supabase.table("users").insert({
-                        'username': 'admin',
-                        'password': 'admin',
-                        'nama_sekolah': 'Admin Dinas Pendidikan',
-                        'role': 'admin'
-                    }).execute()
-                    all_users = supabase.table("users").select("*").execute().data
 
                 matched_user = next((u for u in all_users if str(u.get('username', '')).strip().lower() == clean_user), None)
                 
@@ -211,25 +202,6 @@ if not st.session_state['logged_in']:
             except Exception as e:
                 st.sidebar.error(f"Koneksi gagal: {e}")
 
-    st.sidebar.markdown("---")
-    if st.sidebar.button("🛠️ Masuk Langsung Sebagai Admin (Bypass)"):
-        try:
-            supabase.table("users").upsert({
-                'username': 'admin',
-                'password': 'admin',
-                'nama_sekolah': 'Admin Dinas Pendidikan',
-                'role': 'admin'
-            }, on_conflict='username').execute()
-        except:
-            pass
-        st.session_state['logged_in'] = True
-        st.session_state['user_info'] = {
-            'username': 'admin',
-            'nama_sekolah': 'Admin Dinas Pendidikan',
-            'role': 'admin'
-        }
-        st.rerun()
-
 else:
     user = st.session_state['user_info']
     st.sidebar.success(f"Login sebagai:\n**{user['nama_sekolah']}**")
@@ -251,13 +223,67 @@ else:
     st.divider()
 
     # ==========================================
-    # ROLE: ADMIN DINAS (SUPPORT MULTI-ADMIN)
+    # ROLE: ADMIN DINAS (TERMASUK MODUL VERIFIKASI)
     # ==========================================
     if user['role'] == 'admin':
         st.subheader("👨‍💼 Panel Administrator Dinas Pendidikan")
-        tab_admin_users, tab_admin_rekon = st.tabs(["👥 Manajemen Akun (Sekolah & Admin)", "📑 Rekapitulasi Laporan & Cetak BAR"])
+        tab_admin_verifikasi, tab_admin_users, tab_admin_rekon = st.tabs([
+            "🔍 Verifikasi Belanja Sekolah", 
+            "👥 Manajemen Akun", 
+            "📑 Rekapitulasi & BAR"
+        ])
 
-        # TAB 1: MANAJEMEN AKUN
+        # TAB 1: MODUL VERIFIKASI BELANJA
+        with tab_admin_verifikasi:
+            st.write("### 🔍 Panel Verifikasi Belanja Sekolah")
+            res_pending = supabase.table("hasil_rekon").select("*").order("id", desc=True).execute()
+            data_rekon = res_pending.data if res_pending.data else []
+
+            if data_rekon:
+                df_p = pd.DataFrame(data_rekon)
+                
+                # Filter Pilihan Laporan
+                sekolah_list = df_p['nama_sekolah'].unique()
+                selected_sec = st.selectbox("Pilih Laporan Sekolah yang Ingin Diverifikasi:", options=df_p['id'].tolist(), format_func=lambda x: f"ID #{x} - {df_p[df_p['id']==x]['nama_sekolah'].values[0]} ({df_p[df_p['id']==x]['status'].values[0]})")
+                
+                row_v = df_p[df_p['id'] == selected_sec].iloc[0]
+                
+                st.info(f"**Sekolah:** {row_v['nama_sekolah']} | **Tanggal Submit:** {row_v['tanggal_submit']} | **Status Saat Ini:** `{row_v['status']}`")
+
+                # Tampilkan Ringkasan
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Transaksi Cocok", f"{row_v['total_matched']}")
+                col2.metric("Gantung SIPD", f"{row_v['total_only_sipd']}")
+                col3.metric("Gantung BKU", f"{row_v['total_only_bank']}")
+
+                # Detail Rincian Belanja
+                st.write("#### 📋 Rincian Item Transaksi Belanja")
+                detail_json = json.loads(row_v['detail_json']) if row_v.get('detail_json') else []
+                if detail_json:
+                    st.dataframe(pd.DataFrame(detail_json), use_container_width=True)
+
+                st.markdown("---")
+                st.write("#### ✍️ Form Keputusan Verifikasi Admin")
+                
+                with st.form(f"form_verifikasi_{row_v['id']}"):
+                    new_status = st.selectbox("Keputusan Verifikasi:", ["Disetujui", "Ditolak / Perlu Perbaikan", "Menunggu Verifikasi"])
+                    catatan = st.text_area("Catatan Admin / Alasan Penolakan (Optional):", value=row_v.get('catatan_admin', '') or '')
+                    btn_v = st.form_submit_button("💾 Simpan Keputusan Verifikasi")
+
+                    if btn_v:
+                        try:
+                            supabase.table("hasil_rekon").update({
+                                'status': new_status,
+                                'catatan_admin': catatan.strip()
+                            }).eq("id", row_v['id']).execute()
+                            st.success(f"Status laporan {row_v['nama_sekolah']} berhasil diperbarui menjadi: **{new_status}**")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Gagal memperbarui status: {e}")
+            else:
+                st.info("Belum ada data laporan yang dikirimkan oleh sekolah.")
+
+        # TAB 2: MANAJEMEN AKUN
         with tab_admin_users:
             col_add, col_edit = st.columns(2)
 
@@ -266,7 +292,7 @@ else:
                 with st.form("form_add_user"):
                     new_username = st.text_input("Username (contoh: smpn2karamat / admin2)")
                     new_password = st.text_input("Password", type="password")
-                    new_nama_sekolah = st.text_input("Nama Instansi / Pengguna (contoh: SMPN 2 Karamat / Admin Tim 2)")
+                    new_nama_sekolah = st.text_input("Nama Instansi / Pengguna")
                     new_role = st.selectbox("Pilih Role / Hak Akses:", ["sekolah", "admin"])
                     submit_add = st.form_submit_button("➕ Simpan Akun Baru")
 
@@ -332,31 +358,23 @@ else:
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Gagal menghapus akun: {e}")
-                else:
-                    st.info("Belum ada akun terdaftar.")
 
-            st.markdown("---")
-            st.write("### 📋 Semua Daftar Akun Terdaftar")
-            res_all = supabase.table("users").select("id, username, password, nama_sekolah, role").execute()
-            if res_all.data:
-                st.dataframe(pd.DataFrame(res_all.data), use_container_width=True)
-
-        # TAB 2: REKAPITULASI & CETAK BAR
+        # TAB 3: REKAPITULASI & CETAK BAR
         with tab_admin_rekon:
             res_rekon = supabase.table("hasil_rekon").select("*").order("id", desc=True).execute()
             if res_rekon.data:
                 df_rekon = pd.DataFrame(res_rekon.data)
-                st.dataframe(df_rekon[['id', 'nama_sekolah', 'tanggal_submit', 'total_matched', 'total_only_sipd', 'total_only_bank', 'nominal_cocok', 'status']], use_container_width=True)
+                st.dataframe(df_rekon[['id', 'nama_sekolah', 'tanggal_submit', 'status', 'catatan_admin', 'total_matched', 'total_only_sipd', 'total_only_bank', 'nominal_cocok']], use_container_width=True)
 
                 st.markdown("---")
                 st.subheader("📄 Cetak Berita Acara Rekonsiliasi (BAR)")
-                selected_id = st.selectbox("Pilih ID Laporan:", df_rekon['id'].tolist())
+                selected_id = st.selectbox("Pilih ID Laporan untuk Cetak PDF BAR:", df_rekon['id'].tolist())
                 row_d = df_rekon[df_rekon['id'] == selected_id].iloc[0]
 
-                st.write(f"**Sekolah:** {row_d['nama_sekolah']} | **Tanggal:** {row_d['tanggal_submit']}")
+                st.write(f"**Sekolah:** {row_d['nama_sekolah']} | **Status Verifikasi:** `{row_d['status']}`")
                 
                 detail_items = json.loads(row_d['detail_json']) if row_d.get('detail_json') else []
-                pdf_bar = generate_bar_pdf(row_d['nama_sekolah'], row_d['tanggal_submit'], detail_items)
+                pdf_bar = generate_bar_pdf(row_d['nama_sekolah'], row_d['tanggal_submit'], detail_items, row_d['status'])
 
                 st.download_button(
                     label="🖨️ Unduh Berita Acara (PDF BAR)",
@@ -364,15 +382,13 @@ else:
                     file_name=f"BAR_{row_d['nama_sekolah'].replace(' ', '_')}.pdf",
                     mime="application/pdf"
                 )
-            else:
-                st.info("Belum ada laporan rekonsiliasi yang masuk dari sekolah.")
 
     # ==========================================
     # ROLE: SEKOLAH
     # ==========================================
     else:
         st.subheader(f"Input & Pengolahan Data: {user['nama_sekolah']}")
-        tab_input, tab_history = st.tabs(["📥 Unggah Dokumen & Rekon", "📜 Riwayat Pengiriman"])
+        tab_input, tab_history = st.tabs(["📥 Unggah Dokumen & Rekon", "📜 Riwayat Pengiriman & Verifikasi"])
 
         with tab_input:
             col_u1, col_u2 = st.columns(2)
@@ -442,16 +458,17 @@ else:
                                 'total_only_sipd': res['only_sipd'],
                                 'total_only_bank': res['only_bank'],
                                 'nominal_cocok': float(res['nom_cocok']),
-                                'status': 'Terkirim',
+                                'status': 'Menunggu Verifikasi',
+                                'catatan_admin': '',
                                 'detail_json': json.dumps(res['detail_items'])
                             }).execute()
 
                             st.balloons()
-                            st.success("Hasil rekonsiliasi berhasil tersimpan permanen di Supabase!")
+                            st.success("Hasil rekonsiliasi berhasil terkirim ke Admin Dinas untuk diverifikasi!")
                             del st.session_state['rekon_temp']
 
         with tab_history:
-            res_h = supabase.table("hasil_rekon").select("tanggal_submit, total_matched, total_only_sipd, total_only_bank, nominal_cocok, status").eq("username", user['username']).order("id", desc=True).execute()
+            res_h = supabase.table("hasil_rekon").select("tanggal_submit, status, catatan_admin, total_matched, total_only_sipd, total_only_bank, nominal_cocok").eq("username", user['username']).order("id", desc=True).execute()
             if res_h.data:
                 st.dataframe(pd.DataFrame(res_h.data), use_container_width=True)
             else:
