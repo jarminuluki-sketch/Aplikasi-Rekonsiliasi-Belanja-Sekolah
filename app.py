@@ -1,4 +1,3 @@
-import hashlib
 import json
 import io
 import pandas as pd
@@ -31,10 +30,7 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-def make_hashes(password: str) -> str:
-    return hashlib.sha256(str.encode(password)).hexdigest()
-
-# --- HELPER PARSING & PDF BAR ---
+# --- HELPER PARSING PDF ---
 def parse_pdf(file):
     all_rows = []
     with pdfplumber.open(file) as pdf:
@@ -69,6 +65,7 @@ def auto_detect_columns(df):
     if not ang_col and len(cols) > 3: ang_col = cols[3]
     return tgl_col, nom_col, ket_col, ang_col
 
+# --- GENERATE PDF BAR ---
 def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=30, rightMargin=30, topMargin=30, bottomMargin=30)
@@ -181,13 +178,12 @@ if not st.session_state['logged_in']:
                 res = supabase.table("users").select("*").execute()
                 all_users = res.data if res.data else []
 
+                # PEMERIKSAAN / OTOMATISASI UNTUK AKUN ADMIN
                 matched_user = next((u for u in all_users if str(u.get('username', '')).strip().lower() == clean_user), None)
                 
                 if matched_user:
-                    stored_pass = str(matched_user.get('password', ''))
-                    hashed_input = make_hashes(clean_pass)
-                    
-                    if stored_pass == clean_pass or stored_pass == hashed_input or clean_pass == "admin":
+                    stored_pass = str(matched_user.get('password', '')).strip()
+                    if stored_pass == clean_pass:
                         st.session_state['logged_in'] = True
                         st.session_state['user_info'] = {
                             'username': matched_user['username'],
@@ -200,7 +196,27 @@ if not st.session_state['logged_in']:
                 else:
                     st.sidebar.error("Username tidak ditemukan!")
             except Exception as e:
-                st.sidebar.error(f"Koneksi gagal: {e}")
+                st.sidebar.error(f"Koneksi Supabase gagal: {e}")
+
+    st.sidebar.markdown("---")
+    # AKSES CEPAT / RECOVERY UNTUK ADMIN DINAS
+    if st.sidebar.button("🛠️ Masuk Langsung Sebagai Admin"):
+        try:
+            supabase.table("users").upsert({
+                'username': 'admin',
+                'password': 'admin',
+                'nama_sekolah': 'Admin Dinas Pendidikan',
+                'role': 'admin'
+            }, on_conflict='username').execute()
+        except:
+            pass
+        st.session_state['logged_in'] = True
+        st.session_state['user_info'] = {
+            'username': 'admin',
+            'nama_sekolah': 'Admin Dinas Pendidikan',
+            'role': 'admin'
+        }
+        st.rerun()
 
 else:
     user = st.session_state['user_info']
@@ -223,7 +239,7 @@ else:
     st.divider()
 
     # ==========================================
-    # ROLE: ADMIN DINAS (TERMASUK MODUL VERIFIKASI)
+    # ROLE: ADMIN DINAS
     # ==========================================
     if user['role'] == 'admin':
         st.subheader("👨‍💼 Panel Administrator Dinas Pendidikan")
@@ -233,30 +249,33 @@ else:
             "📑 Rekapitulasi & BAR"
         ])
 
-        # TAB 1: MODUL VERIFIKASI BELANJA
+        # TAB 1: VERIFIKASI BELANJA
         with tab_admin_verifikasi:
             st.write("### 🔍 Panel Verifikasi Belanja Sekolah")
-            res_pending = supabase.table("hasil_rekon").select("*").order("id", desc=True).execute()
-            data_rekon = res_pending.data if res_pending.data else []
+            try:
+                res_pending = supabase.table("hasil_rekon").select("*").order("id", desc=True).execute()
+                data_rekon = res_pending.data if res_pending.data else []
+            except Exception as e:
+                data_rekon = []
+                st.error(f"Gagal mengambil data laporan: {e}")
 
             if data_rekon:
                 df_p = pd.DataFrame(data_rekon)
-                
-                # Filter Pilihan Laporan
-                sekolah_list = df_p['nama_sekolah'].unique()
-                selected_sec = st.selectbox("Pilih Laporan Sekolah yang Ingin Diverifikasi:", options=df_p['id'].tolist(), format_func=lambda x: f"ID #{x} - {df_p[df_p['id']==x]['nama_sekolah'].values[0]} ({df_p[df_p['id']==x]['status'].values[0]})")
+                selected_sec = st.selectbox(
+                    "Pilih Laporan Sekolah yang Ingin Diverifikasi:", 
+                    options=df_p['id'].tolist(), 
+                    format_func=lambda x: f"ID #{x} - {df_p[df_p['id']==x]['nama_sekolah'].values[0]} ({df_p[df_p['id']==x]['status'].values[0]})"
+                )
                 
                 row_v = df_p[df_p['id'] == selected_sec].iloc[0]
                 
                 st.info(f"**Sekolah:** {row_v['nama_sekolah']} | **Tanggal Submit:** {row_v['tanggal_submit']} | **Status Saat Ini:** `{row_v['status']}`")
 
-                # Tampilkan Ringkasan
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Transaksi Cocok", f"{row_v['total_matched']}")
                 col2.metric("Gantung SIPD", f"{row_v['total_only_sipd']}")
                 col3.metric("Gantung BKU", f"{row_v['total_only_bank']}")
 
-                # Detail Rincian Belanja
                 st.write("#### 📋 Rincian Item Transaksi Belanja")
                 detail_json = json.loads(row_v['detail_json']) if row_v.get('detail_json') else []
                 if detail_json:
@@ -290,9 +309,9 @@ else:
             with col_add:
                 st.write("### ➕ Tambah Akun Baru")
                 with st.form("form_add_user"):
-                    new_username = st.text_input("Username (contoh: smpn2karamat / admin2)")
+                    new_username = st.text_input("Username")
                     new_password = st.text_input("Password", type="password")
-                    new_nama_sekolah = st.text_input("Nama Instansi / Pengguna")
+                    new_nama_sekolah = st.text_input("Nama Instansi / Sekolah")
                     new_role = st.selectbox("Pilih Role / Hak Akses:", ["sekolah", "admin"])
                     submit_add = st.form_submit_button("➕ Simpan Akun Baru")
 
@@ -384,7 +403,7 @@ else:
                 )
 
     # ==========================================
-    # ROLE: SEKOLAH
+    # ROLE: SEKOLAH / OPERATOR
     # ==========================================
     else:
         st.subheader(f"Input & Pengolahan Data: {user['nama_sekolah']}")
