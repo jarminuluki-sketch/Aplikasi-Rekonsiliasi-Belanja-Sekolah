@@ -214,10 +214,14 @@ if not st.session_state['logged_in']:
     password_input = st.sidebar.text_input("Password", type="password")
     
     if st.sidebar.button("Masuk"):
-        res = supabase.table("users").select("*").eq("username", username_input.lower().strip()).execute()
+        clean_username = username_input.lower().strip()
+        hashed_input = make_hashes(password_input)
+        
+        # Ambil data user berdasarkan username (case-insensitive)
+        res = supabase.table("users").select("*").ilike("username", clean_username).execute()
         users = res.data
         
-        if users and check_hashes(password_input, users[0]['password']):
+        if users and users[0]['password'] == hashed_input:
             st.session_state['logged_in'] = True
             st.session_state['user_info'] = {
                 'username': users[0]['username'],
@@ -227,7 +231,6 @@ if not st.session_state['logged_in']:
             st.rerun()
         else:
             st.sidebar.error("Username atau Password salah!")
-
     st.title("📊 Aplikasi Rekonsiliasi Belanja Sekolah")
     st.subheader("Dinas Pendidikan dan Kebudayaan Kabupaten Buol")
     st.info("Silakan login melalui menu di sebelah kiri untuk mengakses fitur sistem.")
