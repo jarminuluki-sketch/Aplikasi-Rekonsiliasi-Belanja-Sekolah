@@ -161,11 +161,11 @@ if 'logged_in' not in st.session_state:
 if 'user_info' not in st.session_state:
     st.session_state['user_info'] = {}
 
-# --- AUTENTIKASI AUTOMATISASI ADMIN ---
+# --- AUTENTIKASI ---
 st.sidebar.title("🔐 Keamanan Sistem")
 
 if not st.session_state['logged_in']:
-    st.sidebar.subheader("Silakan Login Sekolah")
+    st.sidebar.subheader("Silakan Login")
     username_input = st.sidebar.text_input("Username")
     password_input = st.sidebar.text_input("Password", type="password")
     
@@ -180,7 +180,7 @@ if not st.session_state['logged_in']:
                 res = supabase.table("users").select("*").execute()
                 all_users = res.data if res.data else []
                 
-                # Buatkan otomatis akun admin jika tabel terdeteksi kosong
+                # Buatkan otomatis akun admin utama jika tabel terdeteksi kosong
                 if not all_users:
                     supabase.table("users").insert({
                         'username': 'admin',
@@ -213,7 +213,6 @@ if not st.session_state['logged_in']:
 
     st.sidebar.markdown("---")
     if st.sidebar.button("🛠️ Masuk Langsung Sebagai Admin (Bypass)"):
-        # Buat/pastikan akun admin tersimpan di Supabase
         try:
             supabase.table("users").upsert({
                 'username': 'admin',
@@ -252,22 +251,23 @@ else:
     st.divider()
 
     # ==========================================
-    # ROLE: ADMIN DINAS
+    # ROLE: ADMIN DINAS (SUPPORT MULTI-ADMIN)
     # ==========================================
     if user['role'] == 'admin':
         st.subheader("👨‍💼 Panel Administrator Dinas Pendidikan")
-        tab_admin_users, tab_admin_rekon = st.tabs(["🏫 Manajemen Akun Sekolah", "📑 Rekapitulasi Laporan & Cetak BAR"])
+        tab_admin_users, tab_admin_rekon = st.tabs(["👥 Manajemen Akun (Sekolah & Admin)", "📑 Rekapitulasi Laporan & Cetak BAR"])
 
-        # TAB 1: MANAJEMEN AKUN SEKOLAH (TAMBAH / EDIT / HAPUS)
+        # TAB 1: MANAJEMEN AKUN
         with tab_admin_users:
             col_add, col_edit = st.columns(2)
 
             with col_add:
-                st.write("### ➕ Tambah Akun Sekolah Baru")
+                st.write("### ➕ Tambah Akun Baru")
                 with st.form("form_add_user"):
-                    new_username = st.text_input("Username Sekolah (contoh: smpn2karamat)")
+                    new_username = st.text_input("Username (contoh: smpn2karamat / admin2)")
                     new_password = st.text_input("Password", type="password")
-                    new_nama_sekolah = st.text_input("Nama Resmi Sekolah (contoh: SMP Negeri 2 Karamat)")
+                    new_nama_sekolah = st.text_input("Nama Instansi / Pengguna (contoh: SMPN 2 Karamat / Admin Tim 2)")
+                    new_role = st.selectbox("Pilih Role / Hak Akses:", ["sekolah", "admin"])
                     submit_add = st.form_submit_button("➕ Simpan Akun Baru")
 
                     if submit_add:
@@ -278,9 +278,9 @@ else:
                                     'username': clean_u,
                                     'password': new_password.strip(),
                                     'nama_sekolah': new_nama_sekolah.strip(),
-                                    'role': 'sekolah'
+                                    'role': new_role
                                 }).execute()
-                                st.success(f"Akun untuk **{new_nama_sekolah}** berhasil dibuat!")
+                                st.success(f"Akun **{new_role.upper()}** ({new_nama_sekolah}) berhasil dibuat!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Gagal menambah akun: {e}")
@@ -291,51 +291,52 @@ else:
                 st.write("### ✏️ Kelola & Edit Akun Terdaftar")
                 res_u = supabase.table("users").select("*").execute()
                 all_u_data = res_u.data if res_u.data else []
-                sekolah_list = [u for u in all_u_data if u['role'] == 'sekolah']
 
-                if sekolah_list:
-                    selected_school_user = st.selectbox(
-                        "Pilih Sekolah yang Ingin Diubah:",
-                        options=[s['username'] for s in sekolah_list],
-                        format_func=lambda x: f"{x} - {next((s['nama_sekolah'] for s in sekolah_list if s['username'] == x), '')}"
+                if all_u_data:
+                    selected_user = st.selectbox(
+                        "Pilih Akun yang Ingin Diubah:",
+                        options=[u['username'] for u in all_u_data],
+                        format_func=lambda x: f"{x} - {next((u['nama_sekolah'] for u in all_u_data if u['username'] == x), '')} ({next((u['role'] for u in all_u_data if u['username'] == x), '')})"
                     )
 
-                    curr_school = next((s for s in sekolah_list if s['username'] == selected_school_user), None)
+                    curr_user = next((u for u in all_u_data if u['username'] == selected_user), None)
 
-                    if curr_school:
+                    if curr_user:
                         with st.form("form_edit_user"):
-                            edit_nama_sekolah = st.text_input("Nama Sekolah:", value=curr_school['nama_sekolah'])
+                            edit_nama_sekolah = st.text_input("Nama Instansi/Pengguna:", value=curr_user['nama_sekolah'])
+                            edit_role = st.selectbox("Role / Hak Akses:", ["sekolah", "admin"], index=0 if curr_user['role'] == 'sekolah' else 1)
                             edit_password = st.text_input("Password Baru (Kosongkan jika tidak diubah):", type="password")
                             
-                            c_btn1, c_btn2 = st.columns(2)
                             submit_edit = st.form_submit_button("💾 Simpan Perubahan")
 
                             if submit_edit:
-                                update_payload = {'nama_sekolah': edit_nama_sekolah.strip()}
+                                update_payload = {
+                                    'nama_sekolah': edit_nama_sekolah.strip(),
+                                    'role': edit_role
+                                }
                                 if edit_password.strip():
                                     update_payload['password'] = edit_password.strip()
 
                                 try:
-                                    supabase.table("users").update(update_payload).eq("username", selected_school_user).execute()
-                                    supabase.table("hasil_rekon").update({'nama_sekolah': edit_nama_sekolah.strip()}).eq("username", selected_school_user).execute()
-                                    st.success("Data berhasil diperbarui!")
+                                    supabase.table("users").update(update_payload).eq("username", selected_user).execute()
+                                    supabase.table("hasil_rekon").update({'nama_sekolah': edit_nama_sekolah.strip()}).eq("username", selected_user).execute()
+                                    st.success("Data akun berhasil diperbarui!")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Gagal memperbarui: {e}")
                         
-                        # Tombol Hapus Terpisah
-                        if st.button("🗑️ Hapus Akun Sekolah Ini", type="secondary"):
+                        if st.button("🗑️ Hapus Akun Ini", type="secondary"):
                             try:
-                                supabase.table("users").delete().eq("username", selected_school_user).execute()
-                                st.success(f"Akun {selected_school_user} berhasil dihapus!")
+                                supabase.table("users").delete().eq("username", selected_user).execute()
+                                st.success(f"Akun {selected_user} berhasil dihapus!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Gagal menghapus akun: {e}")
                 else:
-                    st.info("Belum ada akun sekolah terdaftar. Silakan tambah di form sebelah kiri.")
+                    st.info("Belum ada akun terdaftar.")
 
             st.markdown("---")
-            st.write("### 📋 Semua Tabel Akun di Supabase")
+            st.write("### 📋 Semua Daftar Akun Terdaftar")
             res_all = supabase.table("users").select("id, username, password, nama_sekolah, role").execute()
             if res_all.data:
                 st.dataframe(pd.DataFrame(res_all.data), use_container_width=True)
