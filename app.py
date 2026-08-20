@@ -1,11 +1,11 @@
 import streamlit as st
 import pdfplumber
 import pandas as pd
-import sqlite3
 import io
 import json
 import hashlib
 from datetime import datetime
+from supabase import create_client, Client
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -14,72 +14,28 @@ from reportlab.lib import colors
 # Konfigurasi Halaman Utama
 st.set_page_config(page_title="Sistem Rekonsiliasi Belanja Sekolah - Kab. Buol", layout="wide")
 
+# ==========================================
+# 1. KONEKSI SUPABASE
+# ==========================================
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+except:
+    st.error("Kredensial SUPABASE_URL atau SUPABASE_KEY belum diatur pada Streamlit Secrets.")
+    st.stop()
+
+@st.cache_resource
+def init_supabase() -> Client:
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+supabase = init_supabase()
+
 # Helper Hash Password
 def make_hashes(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
 def check_hashes(password, hashed_text):
-    if make_hashes(password) == hashed_text:
-        return hashed_text
-    return False
-
-# ==========================================
-# 1. INISIALISASI DATABASE SQLITE
-# ==========================================
-def init_db():
-    conn = sqlite3.connect("rekonsiliasi.db")
-    c = conn.cursor()
-    
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT,
-            nama_sekolah TEXT,
-            role TEXT
-        )
-    ''')
-    
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS hasil_rekon (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
-            nama_sekolah TEXT,
-            tanggal_submit TEXT,
-            total_matched INTEGER,
-            total_only_sipd INTEGER,
-            total_only_bank INTEGER,
-            nominal_cocok REAL,
-            status TEXT,
-            detail_json TEXT
-        )
-    ''')
-    
-    # Penambahan Kolom Otomatis jika belum ada
-    columns_users = [row[1] for row in c.execute("PRAGMA table_info(users)").fetchall()]
-    if 'nama_sekolah' not in columns_users:
-        c.execute("ALTER TABLE users ADD COLUMN nama_sekolah TEXT")
-    
-    columns_rekon = [row[1] for row in c.execute("PRAGMA table_info(hasil_rekon)").fetchall()]
-    if 'username' not in columns_rekon:
-        c.execute("ALTER TABLE hasil_rekon ADD COLUMN username TEXT")
-    if 'nama_sekolah' not in columns_rekon:
-        c.execute("ALTER TABLE hasil_rekon ADD COLUMN nama_sekolah TEXT")
-    if 'detail_json' not in columns_rekon:
-        c.execute("ALTER TABLE hasil_rekon ADD COLUMN detail_json TEXT")
-
-    # Akun Default
-    c.execute("SELECT * FROM users WHERE username = 'admin'")
-    if not c.fetchone():
-        c.execute("INSERT INTO users (username, password, nama_sekolah, role) VALUES (?, ?, ?, ?)",
-                  ('admin', make_hashes('admin123'), 'Admin Dinas Pendidikan', 'admin'))
-        c.execute("INSERT INTO users (username, password, nama_sekolah, role) VALUES (?, ?, ?, ?)",
-                  ('smp2karamat', make_hashes('smp123'), 'SMP Negeri 2 Karamat', 'sekolah'))
-    
-    conn.commit()
-    conn.close()
-
-init_db()
+    return make_hashes(password) == hashed_text
 
 # ==========================================
 # 2. HELPER FUNCTIONS & CETAK PDF BAR
@@ -258,18 +214,15 @@ if not st.session_state['logged_in']:
     password_input = st.sidebar.text_input("Password", type="password")
     
     if st.sidebar.button("Masuk"):
-        conn = sqlite3.connect("rekonsiliasi.db")
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE username = ?", (username_input.lower().strip(),))
-        user = c.fetchone()
-        conn.close()
+        res = supabase.table("users").select("*").eq("username", username_input.lower().strip()).execute()
+        users = res.data
         
-        if user and check_hashes(password_input, user[2]):
+        if users and check_hashes(password_input, users[0]['password']):
             st.session_state['logged_in'] = True
             st.session_state['user_info'] = {
-                'username': user[1],
-                'nama_sekolah': user[3] if len(user) > 3 and user[3] else user[1],
-                'role': user[4] if len(user) > 4 else 'sekolah'
+                'username': users[0]['username'],
+                'nama_sekolah': users[0]['nama_sekolah'],
+                'role': users[0]['role']
             }
             st.rerun()
         else:
@@ -289,7 +242,7 @@ else:
         st.rerun()
 
     st.title("📊 Aplikasi Rekonsiliasi Belanja Sekolah")
-    st.caption("Dinas Pendidikan dan Kebudayaan Kabupaten Buol (TK, SD, dan SMP)")
+    st.caption("Dinas Pendidikan dan Kebudayaan Kabupaten Buol")
 
     # ==========================================
     # 4. HALAMAN SEKOLAH
@@ -314,21 +267,6 @@ else:
                     auto_tgl_s, auto_nom_s, auto_ket_s, auto_ang_s = auto_detect_columns(df_sipd)
                     auto_tgl_b, auto_nom_b, auto_ket_b, _ = auto_detect_columns(df_bank)
 
-                    with st.expander("🛠️ Pengaturan Pemetaan Kolom (Otomatis)", expanded=False):
-                        c1, c2, c3, c4 = st.columns(4)
-                        with c1:
-                            col_tgl_s = st.selectbox("Tgl SIPD", df_sipd.columns, index=list(df_sipd.columns).index(auto_tgl_s))
-                            col_tgl_b = st.selectbox("Tgl BKU", df_bank.columns, index=list(df_bank.columns).index(auto_tgl_b))
-                        with c2:
-                            col_nom_s = st.selectbox("Realisasi SIPD", df_sipd.columns, index=list(df_sipd.columns).index(auto_nom_s))
-                            col_nom_b = st.selectbox("Realisasi BKU", df_bank.columns, index=list(df_bank.columns).index(auto_nom_b))
-                        with c3:
-                            col_ket_s = st.selectbox("Uraian SIPD", df_sipd.columns, index=list(df_sipd.columns).index(auto_ket_s))
-                            col_ket_b = st.selectbox("Uraian BKU", df_bank.columns, index=list(df_bank.columns).index(auto_ket_b))
-                        with c4:
-                            col_ang_s = st.selectbox("Anggaran SIPD", df_sipd.columns, index=list(df_sipd.columns).index(auto_ang_s))
-
-                    st.markdown("---")
                     if st.button("🚀 Jalankan Rekonsiliasi Otomatis", type="primary"):
                         def clean_amount(val):
                             if pd.isna(val): return 0.0
@@ -336,76 +274,83 @@ else:
                             try: return float(val_str)
                             except: return 0.0
 
-                        df_sipd['Nominal_Clean'] = df_sipd[col_nom_s].apply(clean_amount)
-                        df_sipd['Anggaran_Clean'] = df_sipd[col_ang_s].apply(clean_amount) if col_ang_s in df_sipd.columns else df_sipd['Nominal_Clean']
-                        df_bank['Nominal_Clean'] = df_bank[col_nom_b].apply(clean_amount)
+                        df_sipd['Nominal_Clean'] = df_sipd[auto_nom_s].apply(clean_amount)
+                        df_sipd['Anggaran_Clean'] = df_sipd[auto_ang_s].apply(clean_amount) if auto_ang_s in df_sipd.columns else df_sipd['Nominal_Clean']
+                        df_bank['Nominal_Clean'] = df_bank[auto_nom_b].apply(clean_amount)
 
-                        merged = pd.merge(
-                            df_sipd, df_bank,
-                            left_on=[col_tgl_s, 'Nominal_Clean'],
-                            right_on=[col_tgl_b, 'Nominal_Clean'],
-                            how='outer', indicator=True
-                        )
+                        merged = pd.merge(df_sipd, df_bank, left_on=[auto_tgl_s, 'Nominal_Clean'], right_on=[auto_tgl_b, 'Nominal_Clean'], how='outer', indicator=True)
 
                         matched = merged[merged['_merge'] == 'both']
                         only_sipd = merged[merged['_merge'] == 'left_only']
                         only_bank = merged[merged['_merge'] == 'right_only']
-                        total_nom_cocok = matched['Nominal_Clean'].sum()
 
                         detail_items = []
                         for idx, row in df_sipd.iterrows():
-                            uraian_txt = str(row.get(col_ket_s, 'Kegiatan Belanja'))
-                            ang_val = float(row.get('Anggaran_Clean', 0.0))
                             real_sipd = float(row.get('Nominal_Clean', 0.0))
-                            
                             match_bku = df_bank[df_bank['Nominal_Clean'] == real_sipd]
-                            real_bku = real_sipd if not match_bku.empty else 0.0
-
                             detail_items.append({
-                                'uraian': uraian_txt,
-                                'anggaran': ang_val,
+                                'uraian': str(row.get(auto_ket_s, 'Kegiatan Belanja')),
+                                'anggaran': float(row.get('Anggaran_Clean', 0.0)),
                                 'realisasi_sipd': real_sipd,
-                                'realisasi_bku': real_bku
+                                'realisasi_bku': real_sipd if not match_bku.empty else 0.0
                             })
 
                         st.session_state['rekon_temp'] = {
                             'matched': len(matched),
                             'only_sipd': len(only_sipd),
                             'only_bank': len(only_bank),
-                            'nom_cocok': total_nom_cocok,
-                            'detail_items': detail_items
+                            'nom_cocok': matched['Nominal_Clean'].sum(),
+                            'detail_items': detail_items,
+                            'bytes_sipd': pdf_sipd.getvalue(),
+                            'bytes_bank': pdf_bank.getvalue()
                         }
 
                         st.success("Pencocokan Otomatis Selesai!")
                         m1, m2, m3 = st.columns(3)
                         m1.metric("Cocok", f"{len(matched)} Transaksi")
-                        m2.metric("Gantung Realisasi SIPD", f"{len(only_sipd)} Transaksi")
-                        m3.metric("Gantung BKU ARKAS", f"{len(only_bank)} Transaksi")
+                        m2.metric("Gantung SIPD", f"{len(only_sipd)} Transaksi")
+                        m3.metric("Gantung BKU", f"{len(only_bank)} Transaksi")
 
                     if 'rekon_temp' in st.session_state:
                         if st.button("📤 Kirim Hasil ke Admin Dinas"):
                             res = st.session_state['rekon_temp']
-                            detail_json_str = json.dumps(res['detail_items'])
+                            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                             
-                            conn = sqlite3.connect("rekonsiliasi.db")
-                            c = conn.cursor()
-                            c.execute('''
-                                INSERT INTO hasil_rekon (username, nama_sekolah, tanggal_submit, total_matched, total_only_sipd, total_only_bank, nominal_cocok, status, detail_json)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (user_data['username'], user_data['nama_sekolah'], datetime.now().strftime("%Y-%m-%d %H:%M"), 
-                                  res['matched'], res['only_sipd'], res['only_bank'], res['nom_cocok'], "Terkirim", detail_json_str))
-                            conn.commit()
-                            conn.close()
+                            # Upload File PDF ke Storage Supabase
+                            path_sipd = f"{user_data['username']}/{timestamp}_SIPD.pdf"
+                            path_bank = f"{user_data['username']}/{timestamp}_BKU.pdf"
+
+                            supabase.storage.from_("dokumen-rekon").upload(path_sipd, res['bytes_sipd'], file_options={"content-type": "application/pdf"})
+                            supabase.storage.from_("dokumen-rekon").upload(path_bank, res['bytes_bank'], file_options={"content-type": "application/pdf"})
+
+                            url_sipd = supabase.storage.from_("dokumen-rekon").get_public_url(path_sipd)
+                            url_bank = supabase.storage.from_("dokumen-rekon").get_public_url(path_bank)
+
+                            # Simpan ke Database Supabase
+                            supabase.table("hasil_rekon").insert({
+                                'username': user_data['username'],
+                                'nama_sekolah': user_data['nama_sekolah'],
+                                'tanggal_submit': datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                'total_matched': res['matched'],
+                                'total_only_sipd': res['only_sipd'],
+                                'total_only_bank': res['only_bank'],
+                                'nominal_cocok': float(res['nom_cocok']),
+                                'status': 'Terkirim',
+                                'detail_json': json.dumps(res['detail_items']),
+                                'file_sipd_url': url_sipd,
+                                'file_bank_url': url_bank
+                            }).execute()
+
                             st.balloons()
-                            st.success("Hasil rekonsiliasi rincian anggaran berhasil terkirim ke Admin Dinas!")
+                            st.success("Hasil rekonsiliasi dan dokumen PDF berhasil tersimpan permanen di cloud!")
                             del st.session_state['rekon_temp']
 
         with tab_history:
-            conn = sqlite3.connect("rekonsiliasi.db")
-            df_my = pd.read_sql_query("SELECT tanggal_submit, total_matched, total_only_sipd, total_only_bank, nominal_cocok, status FROM hasil_rekon WHERE username = ? ORDER BY id DESC", conn, params=(user_data['username'],))
-            conn.close()
-            st.write("Riwayat Pengajuan Rekonsiliasi Sekolah Anda:")
-            st.dataframe(df_my, use_container_width=True)
+            res = supabase.table("hasil_rekon").select("tanggal_submit, total_matched, total_only_sipd, total_only_bank, nominal_cocok, status").eq("username", user_data['username']).order("id", desc=True).execute()
+            if res.data:
+                st.dataframe(pd.DataFrame(res.data), use_container_width=True)
+            else:
+                st.info("Belum ada riwayat pengiriman.")
 
     # ==========================================
     # 5. HALAMAN ADMIN DINAS
@@ -416,24 +361,24 @@ else:
         tab_admin_rekon, tab_admin_users = st.tabs(["📑 Rekapitulasi & Cetak BAR", "🏫 Manajemen Akun Sekolah"])
 
         with tab_admin_rekon:
-            conn = sqlite3.connect("rekonsiliasi.db")
-            df_db = pd.read_sql_query("SELECT id, username, nama_sekolah, tanggal_submit, total_matched, total_only_sipd, total_only_bank, nominal_cocok, status, detail_json FROM hasil_rekon ORDER BY id DESC", conn)
-            conn.close()
+            res = supabase.table("hasil_rekon").select("*").order("id", desc=True).execute()
+            df_db = pd.DataFrame(res.data)
 
             if df_db.empty:
-                st.info("Belum ada Sekolah yang mengirimkan laporan rekonsiliasi.")
+                st.info("Belum ada sekolah yang mengirimkan laporan rekonsiliasi.")
             else:
-                st.write("Daftar Laporan Rekonsiliasi Masuk dari Sekolah:")
+                st.write("Daftar Laporan Masuk dari Sekolah:")
                 st.dataframe(df_db[['id', 'nama_sekolah', 'tanggal_submit', 'total_matched', 'total_only_sipd', 'total_only_bank', 'nominal_cocok', 'status']], use_container_width=True)
 
                 st.markdown("---")
-                st.subheader("📄 Cetak Berita Acara Rekonsiliasi (BAR) Rincian Belanja")
+                st.subheader("📄 Cetak Berita Acara Rekonsiliasi (BAR) & Lihat Lampiran")
                 selected_id = st.selectbox("Pilih ID Pengajuan:", df_db['id'].tolist())
                 row_data = df_db[df_db['id'] == selected_id].iloc[0]
 
                 st.write(f"**Nama Sekolah:** {row_data['nama_sekolah']}")
                 st.write(f"**Waktu Kirim:** {row_data['tanggal_submit']}")
-                
+                st.markdown(f"**Lampiran File Lampiran:** [📄 PDF SIPD]({row_data['file_sipd_url']}) | [📄 PDF BKU]({row_data['file_bank_url']})")
+
                 try:
                     detail_items = json.loads(row_data['detail_json']) if row_data['detail_json'] else []
                 except:
@@ -465,25 +410,21 @@ else:
 
                     if submit_user:
                         if new_username and new_password and new_nama_sekolah:
-                            try:
-                                conn = sqlite3.connect("rekonsiliasi.db")
-                                c = conn.cursor()
-                                c.execute("INSERT INTO users (username, password, nama_sekolah, role) VALUES (?, ?, ?, ?)",
-                                          (new_username.lower().strip(), make_hashes(new_password), new_nama_sekolah, 'sekolah'))
-                                conn.commit()
-                                conn.close()
-                                st.success(f"Akun untuk **{new_nama_sekolah}** berhasil ditambahkan!")
-                                st.rerun()
-                            except sqlite3.IntegrityError:
-                                st.error("Username sudah terpakai! Gunakan username lain.")
+                            supabase.table("users").insert({
+                                'username': new_username.lower().strip(),
+                                'password': make_hashes(new_password),
+                                'nama_sekolah': new_nama_sekolah,
+                                'role': 'sekolah'
+                            }).execute()
+                            st.success(f"Akun untuk **{new_nama_sekolah}** berhasil ditambahkan!")
+                            st.rerun()
                         else:
                             st.warning("Mohon lengkapi seluruh kolom formulir.")
 
             with col_right:
                 st.subheader("✏️ Edit Nama Sekolah & Password")
-                conn = sqlite3.connect("rekonsiliasi.db")
-                df_sekolah = pd.read_sql_query("SELECT username, nama_sekolah FROM users WHERE role = 'sekolah'", conn)
-                conn.close()
+                res_u = supabase.table("users").select("username, nama_sekolah").eq("role", "sekolah").execute()
+                df_sekolah = pd.DataFrame(res_u.data)
 
                 if not df_sekolah.empty:
                     selected_user = st.selectbox("Pilih Sekolah yang Ingin Diubah:", df_sekolah['username'].tolist())
@@ -495,25 +436,17 @@ else:
                         submit_edit = st.form_submit_button("Simpan Perubahan")
 
                         if submit_edit:
-                            conn = sqlite3.connect("rekonsiliasi.db")
-                            c = conn.cursor()
-                            
-                            c.execute("UPDATE users SET nama_sekolah = ? WHERE username = ?", (updated_nama_sekolah, selected_user))
-                            c.execute("UPDATE hasil_rekon SET nama_sekolah = ? WHERE username = ?", (updated_nama_sekolah, selected_user))
-
+                            update_data = {'nama_sekolah': updated_nama_sekolah}
                             if updated_password:
-                                c.execute("UPDATE users SET password = ? WHERE username = ?", (make_hashes(updated_password), selected_user))
+                                update_data['password'] = make_hashes(updated_password)
 
-                            conn.commit()
-                            conn.close()
+                            supabase.table("users").update(update_data).eq("username", selected_user).execute()
+                            supabase.table("hasil_rekon").update({'nama_sekolah': updated_nama_sekolah}).eq("username", selected_user).execute()
+
                             st.success("Data Sekolah berhasil diperbarui!")
                             st.rerun()
-                else:
-                    st.info("Belum ada akun Sekolah yang terdaftar.")
 
             st.markdown("---")
             st.subheader("📋 Daftar Akun Sekolah Terdaftar")
-            conn = sqlite3.connect("rekonsiliasi.db")
-            df_users = pd.read_sql_query("SELECT id, username, nama_sekolah, role FROM users", conn)
-            conn.close()
-            st.dataframe(df_users, use_container_width=True)
+            res_all = supabase.table("users").select("id, username, nama_sekolah, role").execute()
+            st.dataframe(pd.DataFrame(res_all.data), use_container_width=True)
