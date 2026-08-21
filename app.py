@@ -40,7 +40,7 @@ def init_supabase() -> Client:
     try:
         # URL dan Key langsung dimasukkan di sini untuk menghindari error secrets
         url = "https://kmdggpfsrabkjlbztuq.supabase.co"
-        key = "MASUKKAN_ANON_PUBLIC_KEY_ANDA_DI_SINI"
+        key = "sb_publishable_OSF90--G5BnumFC2AKN2WQ_h8Zo5QMu"
         return create_client(url, key)
     except Exception as e:
         st.error(f"Gagal terhubung ke Supabase: {e}")
