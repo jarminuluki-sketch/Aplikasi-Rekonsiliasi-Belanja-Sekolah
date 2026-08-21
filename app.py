@@ -468,6 +468,17 @@ else:
             res_rekon = supabase.table("hasil_rekon").select("*").order("id", desc=True).execute()
             if res_rekon.data:
                 df_rekon = pd.DataFrame(res_rekon.data)
+                
+                # --- AKUMULASI KESELURUH REALISASI SISI ADMIN ---
+                st.write("### 📈 Akumulasi Realisasi Seluruh Sekolah")
+                df_disetujui = df_rekon[df_rekon['status'] == 'Disetujui']
+                
+                col_adm1, col_adm2, col_adm3 = st.columns(3)
+                col_adm1.metric("Total Laporan Masuk", f"{len(df_rekon)} Laporan")
+                col_adm2.metric("Laporan Disetujui", f"{len(df_disetujui)} Laporan")
+                col_adm3.metric("Total Realisasi Disetujui", f"Rp {df_disetujui['nominal_cocok'].sum():,.2f}")
+
+                st.divider()
                 st.dataframe(df_rekon[['id', 'nama_sekolah', 'tanggal_submit', 'status', 'catatan_admin', 'total_matched', 'total_only_sipd', 'total_only_bank', 'nominal_cocok']], use_container_width=True)
 
                 st.markdown("---")
@@ -571,10 +582,30 @@ else:
                             st.success("Hasil rekonsiliasi berhasil terkirim ke Admin Dinas untuk diverifikasi!")
                             del st.session_state['rekon_temp']
 
+        # TAB RIWAYAT SEKOLAH DENGAN RINGKASAN AKUMULASI BULANAN
         with tab_history:
-            res_h = supabase.table("hasil_rekon").select("tanggal_submit, status, catatan_admin, total_matched, total_only_sipd, total_only_bank, nominal_cocok").eq("username", user['username']).order("id", desc=True).execute()
+            res_h = supabase.table("hasil_rekon")\
+                .select("tanggal_submit, status, catatan_admin, total_matched, total_only_sipd, total_only_bank, nominal_cocok")\
+                .eq("username", user['username'])\
+                .order("id", desc=True)\
+                .execute()
+
             if res_h.data:
-                st.dataframe(pd.DataFrame(res_h.data), use_container_width=True)
+                df_h = pd.DataFrame(res_h.data)
+
+                # --- FITUR KESELURUHAN REALISASI PER BULAN ---
+                st.write("### 📊 Ringkasan Total Realisasi Bulanan")
+
+                total_akumulasi = df_h['nominal_cocok'].sum()
+                jumlah_bulan = len(df_h)
+
+                c_rekap1, c_rekap2 = st.columns(2)
+                c_rekap1.metric("Total Pengiriman (Bulan/Laporan)", f"{jumlah_bulan} Kali")
+                c_rekap2.metric("Total Akumulasi Realisasi Cocok", f"Rp {total_akumulasi:,.2f}")
+
+                st.divider()
+                st.write("#### 📜 Detail Riwayat Pengiriman")
+                st.dataframe(df_h, use_container_width=True)
             else:
                 st.info("Belum ada riwayat pengiriman.")
 
