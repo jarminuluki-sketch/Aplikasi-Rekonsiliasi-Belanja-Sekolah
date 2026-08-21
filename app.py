@@ -42,7 +42,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. KONEKSI SUPABASE
+# 2. KONEKSI SUPABASE DENGAN ERROR HANDLING
 # ==========================================
 @st.cache_resource
 def init_supabase() -> Client:
@@ -51,7 +51,7 @@ def init_supabase() -> Client:
         key = st.secrets["SUPABASE_KEY"]
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Gagal terhubung ke Supabase. Periksa st.secrets Anda. Detail: {e}")
+        st.error(f"Gagal terhubung ke Supabase. Periksa pengaturan 'Secrets' Anda di Streamlit Cloud. Detail: {e}")
         st.stop()
 
 supabase = init_supabase()
@@ -146,7 +146,6 @@ def auto_detect_columns(df):
 def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_rekon, biodata_sekolah=None, biodata_admin=None):
     buffer = io.BytesIO()
     
-    # Margin 36pt (0.5 inci) -> Lebar printable tepat 540pt
     doc = SimpleDocTemplate(
         buffer, 
         pagesize=legal, 
@@ -171,7 +170,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     if not biodata_admin:
         biodata_admin = {'nama': '....................', 'nip': '....................', 'pangkat': '....................', 'jabatan': 'Tim Verifikasi Dinas', 'unit_kerja': 'Dinas Pendidikan dan Kebudayaan'}
 
-    # KOP SURAT
     header_text = [
         Paragraph("PEMERINTAH KABUPATEN BUOL", ParagraphStyle('H1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, alignment=1)),
         Paragraph("DINAS PENDIDIKAN DAN KEBUDAYAAN", ParagraphStyle('H2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=1)),
@@ -217,7 +215,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph(pembuka_text, style_body))
     story.append(Spacer(1, 6))
 
-    # IDENTITAS PIHAK (Total lebar = 540 pt)
     story.append(Paragraph("1. Pihak Pertama (Pengirim / Sekolah):", style_bold_label))
     bio_sekolah_table = [
         [Paragraph("Nama", style_body), Paragraph(":", style_body), Paragraph(f"<b>{biodata_sekolah.get('nama', '-')}</b>", style_body)],
@@ -247,7 +244,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph("Telah melakukan rekonsiliasi data pencatatan Belanja Sekolah antara Laporan Realisasi Belanja (SIPD) dengan Catatan BKU (ARKAS) dengan hasil rincian sebagai berikut:", style_body))
     story.append(Spacer(1, 8))
 
-    # TABEL RINCIAN REKONSILIASI (Total Lebar disesuaikan tepat 540 pt)
     hdr_s = ParagraphStyle('TH', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, alignment=1, textColor=colors.whitesmoke)
     table_data = [[
         Paragraph("No", hdr_s), Paragraph("Uraian Program / Kegiatan", hdr_s),
@@ -290,7 +286,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         Paragraph(f"<b>Rp {tot_sisa:,.2f}</b>", tot_s), Paragraph("-", b_c)
     ])
 
-    # Jumlah Total Lebar Kolom = 20 + 130 + 65 + 65 + 65 + 65 + 130 = 540 pt
     t = Table(table_data, colWidths=[20, 130, 65, 65, 65, 65, 130], repeatRows=1)
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
@@ -306,7 +301,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph(f"Demikian Berita Acara Rekonsiliasi Belanja {sekolah_name} ini dibuat dengan sebenarnya untuk dipergunakan sebagaimana mestinya.", style_body))
     story.append(Spacer(1, 15))
 
-    # TANDA TANGAN (Total Lebar = 540 pt: 270 + 270)
     nama_p1, nip_p1, jab_p1 = biodata_sekolah.get('nama', '....................'), biodata_sekolah.get('nip', '....................'), biodata_sekolah.get('jabatan', 'Bendahara Sekolah')
     nama_p2, nip_p2, jab_p2 = biodata_admin.get('nama', '....................'), biodata_admin.get('nip', '....................'), biodata_admin.get('jabatan', 'Tim Verifikasi Dinas')
 
@@ -334,7 +328,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user_info' not in st.session_state: st.session_state['user_info'] = {}
 
-# BANNER RUNNING TEXT
 st.markdown("""
     <div class="running-text-box">
         <marquee behavior="scroll" direction="left" scrollamount="8" style="font-size: 30px; font-weight: bold; color: #15803d;">
@@ -343,7 +336,6 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# SIDEBAR LOGIN
 st.sidebar.title("🔐 Keamanan Sistem")
 
 if not st.session_state['logged_in']:
@@ -396,9 +388,6 @@ else:
     user = st.session_state['user_info']
     st.divider()
 
-    # ------------------------------------------
-    # ROLE: ADMIN DINAS
-    # ------------------------------------------
     if user['role'] == 'admin':
         st.subheader("👨‍💼 Panel Administrator Dinas Pendidikan")
         tab_admin_verifikasi, tab_admin_users, tab_admin_rekon = st.tabs([
@@ -407,7 +396,6 @@ else:
             "📑 Rekapitulasi & BAR"
         ])
 
-        # TAB 1: VERIFIKASI BELANJA SEKOLAH
         with tab_admin_verifikasi:
             st.write("### 🔍 Panel Verifikasi Belanja Sekolah")
             try:
@@ -514,7 +502,6 @@ else:
             else:
                 st.info("Belum ada data laporan yang dikirimkan oleh sekolah.")
 
-        # TAB 2: MANAJEMEN AKUN
         with tab_admin_users:
             col_add, col_edit = st.columns(2)
             with col_add:
@@ -585,7 +572,6 @@ else:
                                 st.rerun()
                             except Exception as e: st.error(f"Gagal menghapus akun: {e}")
 
-        # TAB 3: REKAPITULASI & CETAK BAR
         with tab_admin_rekon:
             res_rekon = supabase.table("hasil_rekon").select("*").order("id", desc=True).execute()
             if res_rekon.data:
@@ -629,9 +615,6 @@ else:
                     mime="application/pdf"
                 )
 
-    # ------------------------------------------
-    # ROLE: SEKOLAH / OPERATOR
-    # ------------------------------------------
     else:
         st.subheader(f"Input & Pengolahan Data: {user['nama_sekolah']}")
         tab_input, tab_history = st.tabs(["📥 Unggah Dokumen & Rekon", "📜 Riwayat Pengiriman & Verifikasi"])
@@ -747,7 +730,6 @@ else:
                                     except Exception as ex:
                                         st.error(f"Gagal menyimpan data: {ex}")
 
-        # TAB RIWAYAT SEKOLAH
         with tab_history:
             try:
                 res_h = supabase.table("hasil_rekon").select("*").eq("username", user['username']).order("id", desc=True).execute()
