@@ -64,18 +64,15 @@ def upload_to_supabase_storage(file, bucket_name="dokumen-rekon", folder_prefix=
         file.seek(0)
         file_bytes = file.read()
         
-        # Buat nama file unik menggunakan timestamp
         filename = f"{folder_prefix}_{int(datetime.now().timestamp())}_{file.name.replace(' ', '_')}"
         path_on_supa = f"uploads/{filename}"
         
-        # Unggah ke bucket
         supabase.storage.from_(bucket_name).upload(
             path=path_on_supa,
             file=file_bytes,
             file_options={"content-type": "application/pdf"}
         )
         
-        # Ambil Public URL agar Admin bisa langsung membuka via browser
         public_url = supabase.storage.from_(bucket_name).get_public_url(path_on_supa)
         return public_url
     except Exception as e:
@@ -149,7 +146,7 @@ def auto_detect_columns(df):
 def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_rekon, biodata_sekolah=None, biodata_admin=None):
     buffer = io.BytesIO()
     
-    # Margin 36pt (0.5 inci) -> Lebar printable = 540pt
+    # Margin 36pt (0.5 inci) -> Lebar printable tepat 540pt
     doc = SimpleDocTemplate(
         buffer, 
         pagesize=legal, 
@@ -202,7 +199,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         except Exception: logo_img = None
 
     if logo_img:
-        header_table = Table([[logo_img, header_text]], colWidths=[40, 480])
+        header_table = Table([[logo_img, header_text]], colWidths=[40, 500])
         header_table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('ALIGN', (0, 0), (0, 0), 'CENTER')]))
         story.append(header_table)
     else:
@@ -220,7 +217,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph(pembuka_text, style_body))
     story.append(Spacer(1, 6))
 
-    # IDENTITAS PIHAK
+    # IDENTITAS PIHAK (Total lebar = 540 pt)
     story.append(Paragraph("1. Pihak Pertama (Pengirim / Sekolah):", style_bold_label))
     bio_sekolah_table = [
         [Paragraph("Nama", style_body), Paragraph(":", style_body), Paragraph(f"<b>{biodata_sekolah.get('nama', '-')}</b>", style_body)],
@@ -229,7 +226,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         [Paragraph("Jabatan", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('jabatan', '-'), style_body)],
         [Paragraph("Unit Kerja", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('unit_kerja', sekolah_name), style_body)],
     ]
-    t_bio1 = Table(bio_sekolah_table, colWidths=[110, 10, 400])
+    t_bio1 = Table(bio_sekolah_table, colWidths=[120, 10, 410])
     t_bio1.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('BOTTOMPADDING', (0,0), (-1,-1), 1)]))
     story.append(t_bio1)
     story.append(Spacer(1, 4))
@@ -242,7 +239,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         [Paragraph("Jabatan", style_body), Paragraph(":", style_body), Paragraph(biodata_admin.get('jabatan', '-'), style_body)],
         [Paragraph("Unit Kerja", style_body), Paragraph(":", style_body), Paragraph(biodata_admin.get('unit_kerja', 'Dinas Pendidikan dan Kebudayaan'), style_body)],
     ]
-    t_bio2 = Table(bio_admin_table, colWidths=[110, 10, 400])
+    t_bio2 = Table(bio_admin_table, colWidths=[120, 10, 410])
     t_bio2.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('BOTTOMPADDING', (0,0), (-1,-1), 1)]))
     story.append(t_bio2)
     story.append(Spacer(1, 8))
@@ -250,7 +247,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph("Telah melakukan rekonsiliasi data pencatatan Belanja Sekolah antara Laporan Realisasi Belanja (SIPD) dengan Catatan BKU (ARKAS) dengan hasil rincian sebagai berikut:", style_body))
     story.append(Spacer(1, 8))
 
-    # TABEL RINCIAN REKONSILIASI (Total Lebar = 510 pt)
+    # TABEL RINCIAN REKONSILIASI (Total Lebar disesuaikan tepat 540 pt)
     hdr_s = ParagraphStyle('TH', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, alignment=1, textColor=colors.whitesmoke)
     table_data = [[
         Paragraph("No", hdr_s), Paragraph("Uraian Program / Kegiatan", hdr_s),
@@ -293,7 +290,8 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         Paragraph(f"<b>Rp {tot_sisa:,.2f}</b>", tot_s), Paragraph("-", b_c)
     ])
 
-    t = Table(table_data, colWidths=[20, 120, 60, 60, 60, 60, 130], repeatRows=1)
+    # Jumlah Total Lebar Kolom = 20 + 130 + 65 + 65 + 65 + 65 + 130 = 540 pt
+    t = Table(table_data, colWidths=[20, 130, 65, 65, 65, 65, 130], repeatRows=1)
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -308,7 +306,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph(f"Demikian Berita Acara Rekonsiliasi Belanja {sekolah_name} ini dibuat dengan sebenarnya untuk dipergunakan sebagaimana mestinya.", style_body))
     story.append(Spacer(1, 15))
 
-    # TANDA TANGAN
+    # TANDA TANGAN (Total Lebar = 540 pt: 270 + 270)
     nama_p1, nip_p1, jab_p1 = biodata_sekolah.get('nama', '....................'), biodata_sekolah.get('nip', '....................'), biodata_sekolah.get('jabatan', 'Bendahara Sekolah')
     nama_p2, nip_p2, jab_p2 = biodata_admin.get('nama', '....................'), biodata_admin.get('nip', '....................'), biodata_admin.get('jabatan', 'Tim Verifikasi Dinas')
 
@@ -323,7 +321,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
             Paragraph(f"<b><u>{nama_p1}</u></b><br/>NIP. {nip_p1}", ParagraphStyle('TTDN2', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
         ]
     ]
-    t_ttd = Table(ttd_data, colWidths=[255, 255])
+    t_ttd = Table(ttd_data, colWidths=[270, 270])
     story.append(t_ttd)
 
     doc.build(story)
@@ -431,7 +429,6 @@ else:
                 
                 st.info(f"**Sekolah:** {row_v['nama_sekolah']} | **Tanggal Submit:** {row_v['tanggal_submit']} | **Status Saat Ini:** `{row_v['status']}`")
 
-                # FITUR BARU: TOMBOL UNTUK MEMBUKA/VALIDASI PDF ASLI
                 st.markdown("---")
                 st.write("#### 📂 Validasi Dokumen Asli yang Diunggah Sekolah")
                 col_doc1, col_doc2 = st.columns(2)
@@ -442,7 +439,7 @@ else:
                 with col_doc1:
                     st.write("**📄 Dokumen Laporan Realisasi Anggaran (LRA)**")
                     if url_sipd:
-                        st.link_button("👁️ Buka / Pratinjau PDF SIPD", url_sipd)
+                        st.link_button("👁️ Buka / Pratinjau PDF LRA", url_sipd)
                     else:
                         st.warning("⚠️ File PDF LRA tidak tersedia / belum diunggah.")
 
@@ -714,7 +711,6 @@ else:
                                 st.warning("⚠️ Mohon isi Nama dan NIP penandatangan terlebih dahulu.")
                             else:
                                 with st.spinner("Mengunggah dokumen PDF ke Storage Supabase & menyimpan laporan..."):
-                                    # 1. Unggah PDF ke Supabase Storage
                                     url_s = upload_to_supabase_storage(pdf_sipd, bucket_name="dokumen-rekon", folder_prefix=f"{user['username']}_SIPD")
                                     url_b = upload_to_supabase_storage(pdf_bank, bucket_name="dokumen-rekon", folder_prefix=f"{user['username']}_BKU")
 
@@ -727,7 +723,6 @@ else:
                                         'unit_kerja': input_unit.strip()
                                     }
 
-                                    # 2. Simpan URL beserta data hasil rekon ke DB
                                     try:
                                         supabase.table("hasil_rekon").insert({
                                             'username': user['username'],
