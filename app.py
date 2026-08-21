@@ -38,11 +38,12 @@ st.markdown("""
 @st.cache_resource
 def init_supabase() -> Client:
     try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
+        # URL dan Key langsung dimasukkan di sini untuk menghindari error secrets
+        url = "https://kmdggpfsrabkjlbztuq.supabase.co"
+        key = "MASUKKAN_ANON_PUBLIC_KEY_ANDA_DI_SINI"
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Gagal terhubung ke Supabase melalui secrets: {e}")
+        st.error(f"Gagal terhubung ke Supabase: {e}")
         st.stop()
 
 supabase = init_supabase()
