@@ -38,13 +38,11 @@ st.markdown("""
 @st.cache_resource
 def init_supabase() -> Client:
     try:
-        # URL dan Key langsung dimasukkan di sini untuk menghindari error secrets
         url = "https://kmdggpfsrabkjlbztuq.supabase.co"
         key = "sb_publishable_OSF90--G5BnumFC2AKN2WQ_h8Zo5QMu"
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Gagal terhubung ke Supabase: {e}")
-        st.stop()
+        return None
 
 supabase = init_supabase()
 
@@ -52,6 +50,9 @@ supabase = init_supabase()
 # 2. HELPER FUNCTIONS (UPLOAD & PARSE)
 # ==========================================
 def upload_to_supabase_storage(file, bucket_name="dokumen-rekon", folder_prefix=""):
+    if not supabase:
+        st.error("Koneksi Supabase belum terhubung.")
+        return None
     try:
         file.seek(0)
         file_bytes = file.read()
@@ -102,6 +103,9 @@ st.markdown("""
 
 st.sidebar.title("🔐 Keamanan Sistem")
 
+if not supabase:
+    st.sidebar.error("⚠️ Koneksi DNS/Supabase Gagal (Name or service not known). Periksa koneksi internet atau jaringan Anda.")
+
 if not st.session_state['logged_in']:
     st.sidebar.subheader("Silakan Login")
     username_input = st.sidebar.text_input("Username")
@@ -110,8 +114,11 @@ if not st.session_state['logged_in']:
     if st.sidebar.button("Masuk"):
         clean_user = username_input.strip().lower()
         clean_pass = password_input.strip()
+        
         if not clean_user or not clean_pass:
             st.sidebar.warning("Username dan Password tidak boleh kosong!")
+        elif not supabase:
+            st.sidebar.error("Tidak dapat masuk karena database belum terhubung.")
         else:
             try:
                 res = supabase.table("users").select("*").eq("username", clean_user).execute()
@@ -128,7 +135,7 @@ if not st.session_state['logged_in']:
                 else:
                     st.sidebar.error("Username atau Password salah!")
             except Exception as e:
-                st.sidebar.error(f"Koneksi Database gagal: {e}")
+                st.sidebar.error(f"Gagal memproses login: {e}")
 else:
     user = st.session_state['user_info']
     st.sidebar.success(f"Login sebagai:\n**{user['nama_sekolah']}**")
@@ -158,11 +165,12 @@ else:
 
         with tab_verif:
             st.write("### Daftar Laporan Masuk dari Sekolah")
+            data_rekon = []
             try:
-                res_rekon = supabase.table("hasil_rekon").select("*").order("id", desc=True).execute()
-                data_rekon = res_rekon.data if res_rekon.data else []
+                if supabase:
+                    res_rekon = supabase.table("hasil_rekon").select("*").order("id", desc=True).execute()
+                    data_rekon = res_rekon.data if res_rekon.data else []
             except Exception as e:
-                data_rekon = []
                 st.error(f"Gagal memuat data: {e}")
 
             if data_rekon:
@@ -263,12 +271,15 @@ else:
 
         with tab_hist:
             st.write("### Riwayat Pengiriman Anda")
+            hist_data = []
             try:
-                res_h = supabase.table("hasil_rekon").select("*").eq("username", user['username']).execute()
-                hist_data = res_h.data if res_h.data else []
-                if hist_data:
-                    st.dataframe(pd.DataFrame(hist_data)[['id', 'tanggal_submit', 'status', 'catatan_admin']], use_container_width=True)
-                else:
-                    st.info("Anda belum memiliki riwayat pengiriman.")
+                if supabase:
+                    res_h = supabase.table("hasil_rekon").select("*").eq("username", user['username']).execute()
+                    hist_data = res_h.data if res_h.data else []
             except Exception as e:
                 st.error(f"Gagal memuat riwayat: {e}")
+
+            if hist_data:
+                st.dataframe(pd.DataFrame(hist_data)[['id', 'tanggal_submit', 'status', 'catatan_admin']], use_container_width=True)
+            else:
+                st.info("Anda belum memiliki riwayat pengiriman.")
