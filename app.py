@@ -10,7 +10,7 @@ from datetime import datetime
 from PIL import Image as PILImage
 from supabase import create_client, Client
 
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import legal
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -22,16 +22,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- INJEKSI CSS CUSTOM (BACKGROUND KUNING-HIJAU & FOOTER STYLE) ---
+# --- INJEKSI CSS CUSTOM ---
 st.markdown("""
     <style>
-    /* Background layar utama gradasi warna Kuning (Emas) ke Hijau khas Logo */
     .stApp {
         background: linear-gradient(135deg, #fef9c3 0%, #dcfce7 50%, #fef08a 100%);
         background-attachment: fixed;
     }
-
-    /* Style untuk Kotak Running Text */
     .running-text-box {
         background-color: rgba(255, 255, 255, 0.85);
         padding: 10px;
@@ -40,8 +37,6 @@ st.markdown("""
         border: 2px solid #16a34a;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
-
-    /* Style Footer */
     .footer-container {
         margin-top: 50px;
         padding: 20px;
@@ -77,7 +72,7 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# --- HELPER KONVERSI TANGGAL BAHASA INDONESIA ---
+# --- HELPER KONVERSI TANGGAL ---
 def get_tanggal_indonesia_terbilang(dt=None):
     if not dt:
         dt = datetime.now()
@@ -133,11 +128,19 @@ def auto_detect_columns(df):
     if not ang_col and len(cols) > 3: ang_col = cols[3]
     return tgl_col, nom_col, ket_col, ang_col
 
-# --- GENERATE PDF BAR DENGAN PERBAIKAN UKURAN TABEL ---
-def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_rekon, biodata_sekolah=None):
+# --- GENERATE PDF BAR (UKURAN LEGAL, DUA PIHAK, KOLOM KETERANGAN) ---
+def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_rekon, biodata_sekolah=None, biodata_admin=None):
     buffer = io.BytesIO()
-    # Halaman Letter = 612 x 792 pt. Margin Kiri/Kanan = 30 pt -> Lebar Tersedia = 552 pt.
-    doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=30, rightMargin=30, topMargin=30, bottomMargin=30)
+    
+    # 1. SET UKURAN KERTAS KE LEGAL (8.5 x 14 inci)
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=legal, 
+        leftMargin=30, 
+        rightMargin=30, 
+        topMargin=30, 
+        bottomMargin=30
+    )
     styles = getSampleStyleSheet()
     story = []
 
@@ -150,10 +153,17 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
 
     if not biodata_sekolah:
         biodata_sekolah = {
-            'nama': '-', 'nip': '-', 'pangkat': '-', 'jabatan': 'Bendahara / Operator Sekolah', 'unit_kerja': sekolah_name
+            'nama': '-', 'nip': '-', 'pangkat': '-', 'jabatan': 'Bendahara BOS', 'unit_kerja': sekolah_name
+        }
+    
+    if not biodata_admin:
+        biodata_admin = {
+            'nama': '....................', 'nip': '....................', 
+            'pangkat': '....................', 'jabatan': 'Tim Verifikasi Dinas', 
+            'unit_kerja': 'Dinas Pendidikan dan Kebudayaan'
         }
 
-    # Kop Surat
+    # KOP SURAT
     header_text = [
         Paragraph("PEMERINTAH KABUPATEN BUOL", ParagraphStyle('H1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, alignment=1)),
         Paragraph("DINAS PENDIDIKAN DAN KEBUDAYAAN", ParagraphStyle('H2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=1)),
@@ -184,7 +194,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
             logo_img = None
 
     if logo_img:
-        # Total = 50 + 500 = 550 pt (Aman)
         header_table = Table([[logo_img, header_text]], colWidths=[50, 500])
         header_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -200,45 +209,62 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Spacer(1, 4))
     story.append(HRFlowable(width="100%", thickness=2, color=colors.black, spaceBefore=0, spaceAfter=8))
 
-    # Judul
+    # JUDUL DOKUMEN
     story.append(Paragraph("BERITA ACARA REKONSILIASI (BAR) BELANJA SEKOLAH", ParagraphStyle('T', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=11, alignment=1, spaceAfter=10)))
     
     style_body = ParagraphStyle('BodyTextCustom', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=13)
+    style_bold_label = ParagraphStyle('BoldLabel', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=13)
 
     pembuka_text = f"Pada Hari ini <b>{hari_str}</b> Tanggal <b>{tgl_str}</b> Bulan <b>{bln_str}</b> Tahun <b>{thn_str}</b>, kami yang bertanda tangan di bawah ini:"
     story.append(Paragraph(pembuka_text, style_body))
     story.append(Spacer(1, 6))
 
-    # Biodata - Total colWidths = 15 + 115 + 10 + 400 = 540 pt (Aman)
-    bio_table_data = [
-        [Paragraph("1.", style_body), Paragraph("Nama", style_body), Paragraph(":", style_body), Paragraph(f"<b>{biodata_sekolah.get('nama', '-')}</b>", style_body)],
-        [Paragraph("", style_body), Paragraph("NIP", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('nip', '-'), style_body)],
-        [Paragraph("", style_body), Paragraph("Pangkat / Gol. Ruang", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('pangkat', '-'), style_body)],
-        [Paragraph("", style_body), Paragraph("Jabatan", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('jabatan', '-'), style_body)],
-        [Paragraph("", style_body), Paragraph("Unit Kerja", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('unit_kerja', sekolah_name), style_body)],
+    # 2. IDENTITAS DUA PIHAK (PIHAK PERTAMA & PIHAK KEDUA)
+    story.append(Paragraph("1. Pihak Pertama (Pengirim / Sekolah):", style_bold_label))
+    bio_sekolah_table = [
+        [Paragraph("Nama", style_body), Paragraph(":", style_body), Paragraph(f"<b>{biodata_sekolah.get('nama', '-')}</b>", style_body)],
+        [Paragraph("NIP", style_body), Paragraph(":", style_body), Paragraph(str(biodata_sekolah.get('nip', '-')), style_body)],
+        [Paragraph("Pangkat / Gol. Ruang", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('pangkat', '-'), style_body)],
+        [Paragraph("Jabatan", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('jabatan', '-'), style_body)],
+        [Paragraph("Unit Kerja", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('unit_kerja', sekolah_name), style_body)],
     ]
-    
-    t_bio = Table(bio_table_data, colWidths=[15, 115, 10, 400])
-    t_bio.setStyle(TableStyle([
+    t_bio1 = Table(bio_sekolah_table, colWidths=[130, 10, 400])
+    t_bio1.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('BOTTOMPADDING', (0,0), (-1,-1), 1),
         ('TOPPADDING', (0,0), (-1,-1), 1),
-        ('LEFTPADDING', (0,0), (-1,-1), 0),
-        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('LEFTPADDING', (0,0), (-1,-1), 10),
     ]))
-    story.append(t_bio)
+    story.append(t_bio1)
+    story.append(Spacer(1, 4))
+
+    story.append(Paragraph("2. Pihak Kedua (Penerima / Admin Dinas):", style_bold_label))
+    bio_admin_table = [
+        [Paragraph("Nama", style_body), Paragraph(":", style_body), Paragraph(f"<b>{biodata_admin.get('nama', '-')}</b>", style_body)],
+        [Paragraph("NIP", style_body), Paragraph(":", style_body), Paragraph(str(biodata_admin.get('nip', '-')), style_body)],
+        [Paragraph("Pangkat / Gol. Ruang", style_body), Paragraph(":", style_body), Paragraph(biodata_admin.get('pangkat', '-'), style_body)],
+        [Paragraph("Jabatan", style_body), Paragraph(":", style_body), Paragraph(biodata_admin.get('jabatan', '-'), style_body)],
+        [Paragraph("Unit Kerja", style_body), Paragraph(":", style_body), Paragraph(biodata_admin.get('unit_kerja', 'Dinas Pendidikan dan Kebudayaan'), style_body)],
+    ]
+    t_bio2 = Table(bio_admin_table, colWidths=[130, 10, 400])
+    t_bio2.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+        ('TOPPADDING', (0,0), (-1,-1), 1),
+        ('LEFTPADDING', (0,0), (-1,-1), 10),
+    ]))
+    story.append(t_bio2)
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("Telah melakukan rekonsiliasi data pencatatan Belanja Sekolah antara Laporan Realisasi Belanja (SIPD) dengan Catatan BKU (ARKAS) dengan hasil rincian sebagai berikut:", style_body))
     story.append(Spacer(1, 8))
 
-    # Tabel Rincian Rekonsiliasi
-    # Total Lebar = 20 + 160 + 70 + 70 + 70 + 70 + 60 = 520 pt (Aman & Presisi)
+    # 3. TABEL REKONSILIASI (KOLOM STATUS DIGANTI KETERANGAN)
     hdr_s = ParagraphStyle('TH', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, alignment=1, textColor=colors.whitesmoke)
     table_data = [[
         Paragraph("No", hdr_s), Paragraph("Uraian Program / Kegiatan", hdr_s),
         Paragraph("Anggaran", hdr_s), Paragraph("Realisasi SIPD", hdr_s),
-        Paragraph("Realisasi BKU", hdr_s), Paragraph("Sisa", hdr_s), Paragraph("Status", hdr_s)
+        Paragraph("Realisasi BKU", hdr_s), Paragraph("Sisa", hdr_s), Paragraph("Keterangan", hdr_s)
     ]]
 
     b_s = ParagraphStyle('TB', parent=styles['Normal'], fontName='Helvetica', fontSize=7)
@@ -252,20 +278,24 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         r_sipd = float(item.get('realisasi_sipd', 0.0))
         r_bku = float(item.get('realisasi_bku', 0.0))
         sisa = ang - r_sipd
-        status = "Sesuai" if abs(r_sipd - r_bku) < 1 else "Tidak Sesuai"
+        selisih = abs(r_sipd - r_bku)
 
         tot_ang += ang
         tot_sipd += r_sipd
         tot_bku += r_bku
         tot_sisa += sisa
 
-        status_html = f"<font color='{'green' if status == 'Sesuai' else 'red'}'><b>{status}</b></font>"
+        # Deskripsi Keterangan tanpa kata "Sesuai / Tidak Sesuai"
+        if selisih < 1:
+            keterangan_txt = "Pencatatan SIPD & BKU Cocok"
+        else:
+            keterangan_txt = f"Selisih pencatatan Rp {selisih:,.2f}"
 
         table_data.append([
             Paragraph(str(idx), b_c), Paragraph(str(item.get('uraian', '-')), b_s),
             Paragraph(f"Rp {ang:,.2f}", b_r), Paragraph(f"Rp {r_sipd:,.2f}", b_r),
             Paragraph(f"Rp {r_bku:,.2f}", b_r), Paragraph(f"Rp {sisa:,.2f}", b_r),
-            Paragraph(status_html, b_c)
+            Paragraph(keterangan_txt, b_s)
         ])
 
     tot_s = ParagraphStyle('TOT', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, alignment=2)
@@ -276,7 +306,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         Paragraph(f"<b>Rp {tot_sisa:,.2f}</b>", tot_s), Paragraph("-", b_c)
     ])
 
-    t = Table(table_data, colWidths=[20, 160, 70, 70, 70, 70, 60], repeatRows=1)
+    t = Table(table_data, colWidths=[20, 150, 65, 65, 65, 65, 90], repeatRows=1)
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -293,19 +323,24 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph(f"Demikian Berita Acara Rekonsiliasi Belanja {sekolah_name} ini dibuat dengan sebenarnya untuk dipergunakan sebagaimana mestinya.", style_body))
     story.append(Spacer(1, 15))
 
-    # Tanda Tangan - Total = 260 + 260 = 520 pt
-    nama_p = biodata_sekolah.get('nama', '....................')
-    nip_p = biodata_sekolah.get('nip', '....................')
+    # TANDA TANGAN DUA PIHAK
+    nama_p1 = biodata_sekolah.get('nama', '....................')
+    nip_p1 = biodata_sekolah.get('nip', '....................')
+    jab_p1 = biodata_sekolah.get('jabatan', 'Bendahara Sekolah')
+
+    nama_p2 = biodata_admin.get('nama', '....................')
+    nip_p2 = biodata_admin.get('nip', '....................')
+    jab_p2 = biodata_admin.get('jabatan', 'Tim Verifikasi Dinas')
 
     ttd_data = [
         [
-            Paragraph(f"<b>Yang Menyerahkan:</b><br/>{biodata_sekolah.get('jabatan', 'Bendahara Sekolah')}", ParagraphStyle('TTDC', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1)),
-            Paragraph("<b>Yang Menerima:</b><br/>Tim Rekonsiliasi Dinas", ParagraphStyle('TTDC2', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
+            Paragraph(f"<b>Pihak Kedua (Penerima):</b><br/>{jab_p2}", ParagraphStyle('TTDC', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1)),
+            Paragraph(f"<b>Pihak Pertama (Pengirim):</b><br/>{jab_p1}", ParagraphStyle('TTDC2', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
         ],
         [Paragraph("<br/><br/><br/>", style_body), Paragraph("<br/><br/><br/>", style_body)],
         [
-            Paragraph(f"<b><u>{nama_p}</u></b><br/>NIP. {nip_p}", ParagraphStyle('TTDN', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1)),
-            Paragraph("<b><u>Tim Verifikasi Dinas</u></b><br/>NIP. ....................", ParagraphStyle('TTDN2', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
+            Paragraph(f"<b><u>{nama_p2}</u></b><br/>NIP. {nip_p2}", ParagraphStyle('TTDN', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1)),
+            Paragraph(f"<b><u>{nama_p1}</u></b><br/>NIP. {nip_p1}", ParagraphStyle('TTDN2', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
         ]
     ]
     t_ttd = Table(ttd_data, colWidths=[260, 260])
@@ -326,7 +361,7 @@ if 'logged_in' not in st.session_state:
 if 'user_info' not in st.session_state:
     st.session_state['user_info'] = {}
 
-# --- RUNNING TEXT DIBAGIAN ATAS ---
+# --- RUNNING TEXT ---
 st.markdown("""
     <div class="running-text-box">
         <marquee behavior="scroll" direction="left" scrollamount="8" style="font-size: 30px; font-weight: bold; color: #15803d;">
@@ -427,13 +462,13 @@ else:
                 st.info(f"**Sekolah:** {row_v['nama_sekolah']} | **Tanggal Submit:** {row_v['tanggal_submit']} | **Status Saat Ini:** `{row_v['status']}`")
 
                 bio_info = json.loads(row_v['biodata_json']) if row_v.get('biodata_json') else {}
-                with st.expander("👤 Informasi Biodata Penandatangan/Pengirim Sekolah", expanded=True):
+                with st.expander("👤 Informasi Identitas Pengirim (Pihak Pertama / Sekolah)", expanded=True):
                     col_b1, col_b2 = st.columns(2)
-                    col_b1.write(f"**Nama:** {bio_info.get('nama', row_v.get('nama_penandatangan', '-'))}")
-                    col_b1.write(f"**NIP:** {bio_info.get('nip', row_v.get('nip_penandatangan', '-'))}")
-                    col_b1.write(f"**Pangkat/Gol. Ruang:** {bio_info.get('pangkat', row_v.get('pangkat_penandatangan', '-'))}")
-                    col_b2.write(f"**Jabatan:** {bio_info.get('jabatan', row_v.get('jabatan_penandatangan', '-'))}")
-                    col_b2.write(f"**Unit Kerja:** {bio_info.get('unit_kerja', row_v.get('unit_kerja', row_v['nama_sekolah']))}")
+                    col_b1.write(f"**Nama:** {bio_info.get('nama', '-')}")
+                    col_b1.write(f"**NIP:** {bio_info.get('nip', '-')}")
+                    col_b1.write(f"**Pangkat/Gol. Ruang:** {bio_info.get('pangkat', '-')}")
+                    col_b2.write(f"**Jabatan:** {bio_info.get('jabatan', '-')}")
+                    col_b2.write(f"**Unit Kerja:** {bio_info.get('unit_kerja', row_v['nama_sekolah'])}")
 
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Transaksi Cocok", f"{row_v['total_matched']}")
@@ -446,23 +481,47 @@ else:
                     st.dataframe(pd.DataFrame(detail_json), use_container_width=True)
 
                 st.markdown("---")
-                st.write("#### ✍️ Form Keputusan Verifikasi Admin")
+                st.write("#### ✍️ Form Keputusan & Identitas Admin Penerima (Pihak Kedua)")
                 
+                # Baca identitas admin sebelumnya jika sudah pernah diisi
+                admin_bio_prev = json.loads(row_v['biodata_admin_json']) if row_v.get('biodata_admin_json') else {}
+
                 with st.form(f"form_verifikasi_{row_v['id']}"):
+                    st.caption("Lengkapi Identitas Pejabat/Admin Dinas yang Memverifikasi Laporan Ini:")
+                    col_adm_i1, col_adm_i2 = st.columns(2)
+                    adm_nama = col_adm_i1.text_input("Nama Lengkap Admin / Pejabat Penerima:", value=admin_bio_prev.get('nama', ''))
+                    adm_nip = col_adm_i1.text_input("NIP Admin / Pejabat Penerima:", value=admin_bio_prev.get('nip', ''))
+                    adm_pangkat = col_adm_i1.text_input("Pangkat / Gol. Ruang:", value=admin_bio_prev.get('pangkat', 'Penata / III/c'))
+                    adm_jabatan = col_adm_i2.text_input("Jabatan Penerima:", value=admin_bio_prev.get('jabatan', 'Bendahara Pengeluaran Dinas'))
+                    adm_unit = col_adm_i2.text_input("Unit Kerja Dinas:", value=admin_bio_prev.get('unit_kerja', 'Dinas Pendidikan dan Kebudayaan'))
+
+                    st.divider()
                     new_status = st.selectbox("Keputusan Verifikasi:", ["Disetujui", "Ditolak / Perlu Perbaikan", "Menunggu Verifikasi"])
                     catatan = st.text_area("Catatan Admin / Alasan Penolakan (Optional):", value=row_v.get('catatan_admin', '') or '')
-                    btn_v = st.form_submit_button("💾 Simpan Keputusan Verifikasi")
+                    
+                    btn_v = st.form_submit_button("💾 Simpan Keputusan & Identitas Penerima")
 
                     if btn_v:
-                        try:
-                            supabase.table("hasil_rekon").update({
-                                'status': new_status,
-                                'catatan_admin': catatan.strip()
-                            }).eq("id", row_v['id']).execute()
-                            st.success(f"Status laporan {row_v['nama_sekolah']} berhasil diperbarui menjadi: **{new_status}**")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Gagal memperbarui status: {e}")
+                        if not adm_nama.strip() or not adm_nip.strip():
+                            st.warning("⚠️ Mohon isi Nama dan NIP Admin/Penerima terlebih dahulu.")
+                        else:
+                            admin_payload = {
+                                'nama': adm_nama.strip(),
+                                'nip': adm_nip.strip(),
+                                'pangkat': adm_pangkat.strip(),
+                                'jabatan': adm_jabatan.strip(),
+                                'unit_kerja': adm_unit.strip()
+                            }
+                            try:
+                                supabase.table("hasil_rekon").update({
+                                    'status': new_status,
+                                    'catatan_admin': catatan.strip(),
+                                    'biodata_admin_json': json.dumps(admin_payload)
+                                }).eq("id", row_v['id']).execute()
+                                st.success(f"Berhasil! Status laporan diperbarui menjadi: **{new_status}**")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Gagal memperbarui status: {e}")
             else:
                 st.info("Belum ada data laporan yang dikirimkan oleh sekolah.")
 
@@ -486,7 +545,7 @@ else:
                                 check_user = supabase.table("users").select("username").eq("username", clean_u).execute()
                                 
                                 if check_user.data and len(check_user.data) > 0:
-                                    st.warning(f"⚠️ Username '{clean_u}' sudah terdaftar! Silakan gunakan username lain.")
+                                    st.warning(f"⚠️ Username '{clean_u}' sudah terdaftar!")
                                 else:
                                     supabase.table("users").insert({
                                         'username': clean_u,
@@ -565,27 +624,31 @@ else:
                 st.dataframe(df_rekon[['id', 'nama_sekolah', 'tanggal_submit', 'status', 'catatan_admin', 'total_matched', 'total_only_sipd', 'total_only_bank', 'nominal_cocok']], use_container_width=True)
 
                 st.markdown("---")
-                st.subheader("📄 Cetak Berita Acara Rekonsiliasi (BAR)")
+                st.subheader("📄 Cetak Berita Acara Rekonsiliasi (BAR - Ukuran Legal)")
                 selected_id = st.selectbox("Pilih ID Laporan untuk Cetak PDF BAR:", df_rekon['id'].tolist())
                 row_d = df_rekon[df_rekon['id'] == selected_id].iloc[0]
 
                 st.write(f"**Sekolah:** {row_d['nama_sekolah']} | **Status Verifikasi:** `{row_d['status']}`")
                 
-                bio_info = json.loads(row_d['biodata_json']) if row_d.get('biodata_json') else {
-                    'nama': row_d.get('nama_penandatangan', '-'),
-                    'nip': row_d.get('nip_penandatangan', '-'),
-                    'pangkat': row_d.get('pangkat_penandatangan', '-'),
-                    'jabatan': row_d.get('jabatan_penandatangan', 'Bendahara Sekolah'),
-                    'unit_kerja': row_d.get('unit_kerja', row_d['nama_sekolah'])
-                }
+                bio_info = json.loads(row_d['biodata_json']) if row_d.get('biodata_json') else {}
+                bio_admin_info = json.loads(row_d['biodata_admin_json']) if row_d.get('biodata_admin_json') else {}
 
                 detail_items = json.loads(row_d['detail_json']) if row_d.get('detail_json') else []
-                pdf_bar = generate_bar_pdf(row_d['nama_sekolah'], row_d['tanggal_submit'], detail_items, row_d['status'], bio_info)
+                
+                # Generate PDF
+                pdf_bar = generate_bar_pdf(
+                    sekolah_name=row_d['nama_sekolah'], 
+                    tanggal_submit_str=row_d['tanggal_submit'], 
+                    detail_items=detail_items, 
+                    status_rekon=row_d['status'], 
+                    biodata_sekolah=bio_info,
+                    biodata_admin=bio_admin_info
+                )
 
                 st.download_button(
-                    label="🖨️ Unduh Berita Acara (PDF BAR)",
+                    label="🖨️ Unduh Berita Acara Legal (PDF BAR)",
                     data=pdf_bar,
-                    file_name=f"BAR_{row_d['nama_sekolah'].replace(' ', '_')}.pdf",
+                    file_name=f"BAR_Legal_{row_d['nama_sekolah'].replace(' ', '_')}.pdf",
                     mime="application/pdf"
                 )
 
@@ -655,16 +718,16 @@ else:
 
                     if 'rekon_temp' in st.session_state:
                         st.markdown("---")
-                        st.write("### 📝 Lengkapi Biodata Pejabat / Penandatangan Sekolah")
-                        st.caption("Data ini akan ditampilkan di Berita Acara Rekonsiliasi (BAR).")
+                        st.write("### 📝 Lengkapi Identitas Pengirim (Pihak Pertama / Sekolah)")
+                        st.caption("Data ini akan ditampilkan pada Berita Acara Rekonsiliasi (BAR).")
                         
                         col_bio1, col_bio2 = st.columns(2)
                         with col_bio1:
-                            input_nama = st.text_input("Nama Lengkap Pejabat/Bendahara:", placeholder="Contoh: Ahmad Yani, S.Pd.")
-                            input_nip = st.text_input("NIP:", placeholder="Contoh: 19850101 201001 1 001")
-                            input_pangkat = st.text_input("Pangkat / Gol. Ruang:", placeholder="Contoh: Penata / III/c")
+                            input_nama = st.text_input("Nama Lengkap Bendahara/Pejabat Sekolah:", placeholder="Contoh: MAMA MIA")
+                            input_nip = st.text_input("NIP:", placeholder="Contoh: 1283984776523465474")
+                            input_pangkat = st.text_input("Pangkat / Gol. Ruang:", placeholder="Contoh: Penata Muda Tingkat I, III/b")
                         with col_bio2:
-                            input_jabatan = st.text_input("Jabatan:", value="Bendahara BOS", placeholder="Contoh: Bendahara BOS / Kepala Sekolah")
+                            input_jabatan = st.text_input("Jabatan:", value="Bendahara BOS")
                             input_unit = st.text_input("Unit Kerja:", value=user['nama_sekolah'])
 
                         if st.button("📤 Kirim Hasil ke Admin Dinas", type="primary"):
@@ -692,7 +755,8 @@ else:
                                         'status': 'Menunggu Verifikasi',
                                         'catatan_admin': '',
                                         'detail_json': json.dumps(res['detail_items']),
-                                        'biodata_json': json.dumps(biodata_payload)
+                                        'biodata_json': json.dumps(biodata_payload),
+                                        'biodata_admin_json': json.dumps({})
                                     }).execute()
 
                                     st.balloons()
@@ -701,7 +765,7 @@ else:
                                 except Exception as ex:
                                     st.error(f"Gagal menyimpan data: {ex}")
 
-        # TAB RIWAYAT SEKOLAH SAFELY
+        # TAB RIWAYAT SEKOLAH
         with tab_history:
             try:
                 res_h = supabase.table("hasil_rekon")\
@@ -719,7 +783,7 @@ else:
                     jumlah_bulan = len(df_h)
 
                     c_rekap1, c_rekap2 = st.columns(2)
-                    c_rekap1.metric("Total Pengiriman (Bulan/Laporan)", f"{jumlah_bulan} Kali")
+                    c_rekap1.metric("Total Pengiriman", f"{jumlah_bulan} Kali")
                     c_rekap2.metric("Total Akumulasi Realisasi Cocok", f"Rp {total_akumulasi:,.2f}")
 
                     st.divider()
@@ -732,7 +796,7 @@ else:
             except Exception as e:
                 st.error(f"Gagal memuat riwayat pengiriman: {e}")
 
-# --- FOOTER DI BAGIAN BAWAH HALAMAN ---
+# --- FOOTER ---
 st.markdown("""
     <div class="footer-container">
         <div class="footer-spirit">🔥 Semangat Tim Verifikasi! 💪</div>
