@@ -47,8 +47,8 @@ st.markdown("""
 @st.cache_resource
 def init_supabase() -> Client:
     try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
+        url = st.secrets["https://kmdggpfsrabkjblbztuq.supabase.co"]
+        key = st.secrets["sb_publishable_OSF90--G5BnumFC2AKN2WQ_h8Zo5QMu"]
         return create_client(url, key)
     except Exception as e:
         st.error(f"Gagal terhubung ke Supabase. Periksa st.secrets Anda. Detail: {e}")
