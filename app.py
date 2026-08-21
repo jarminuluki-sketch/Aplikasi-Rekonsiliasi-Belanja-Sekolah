@@ -22,6 +22,48 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- INJEKSI CSS CUSTOM (BACKGROUND KUNING-HIJAU & FOOTER STYLE) ---
+st.markdown("""
+    <style>
+    /* Background layar utama gradasi warna Kuning (Emas) ke Hijau khas Logo */
+    .stApp {
+        background: linear-gradient(135deg, #fef9c3 0%, #dcfce7 50%, #fef08a 100%);
+        background-attachment: fixed;
+    }
+
+    /* Style untuk Kotak Running Text */
+    .running-text-box {
+        background-color: rgba(255, 255, 255, 0.85);
+        padding: 10px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        border: 2px solid #16a34a;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Style Footer */
+    .footer-container {
+        margin-top: 50px;
+        padding: 20px;
+        background-color: rgba(255, 255, 255, 0.9);
+        border-top: 3px solid #15803d;
+        border-radius: 10px 10px 0 0;
+        text-align: center;
+        color: #14532d;
+    }
+    .footer-spirit {
+        font-size: 20px;
+        font-weight: bold;
+        color: #15803d;
+        margin-bottom: 5px;
+    }
+    .footer-copyright {
+        font-size: 13px;
+        color: #4b5563;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- INISIALISASI SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
@@ -211,8 +253,8 @@ if 'user_info' not in st.session_state:
 
 # --- RUNNING TEXT DIBAGIAN ATAS ---
 st.markdown("""
-    <div style="background-color: #eef2f5; padding: 10px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #dcdfe3;">
-        <marquee behavior="scroll" direction="left" scrollamount="8" style="font-size: 30px; font-weight: bold; color: #1e3a8a;">
+    <div class="running-text-box">
+        <marquee behavior="scroll" direction="left" scrollamount="8" style="font-size: 30px; font-weight: bold; color: #15803d;">
             📢 Mari lakukan rekonsiliasi secara berkala dengan teliti dan disiplin. Data yang tertib menjadi dasar pelaporan yang akurat, tepat waktu, dan dapat dipertanggungjawabkan. Rekonsiliasi rutin, laporan semakin berkualitas!
         </marquee>
     </div>
@@ -535,3 +577,13 @@ else:
                 st.dataframe(pd.DataFrame(res_h.data), use_container_width=True)
             else:
                 st.info("Belum ada riwayat pengiriman.")
+
+# --- FOOTER DI BAGIAN BAWAH HALAMAN ---
+st.markdown("""
+    <div class="footer-container">
+        <div class="footer-spirit">🔥 Semangat Tim Verifikasi! 💪</div>
+        <div class="footer-copyright">
+            © 2026 Dinas Pendidikan dan Kebudayaan Kabupaten Buol. Hak Cipta Dilindungi Undang-Undang.
+        </div>
+    </div>
+""", unsafe_allow_html=True)
