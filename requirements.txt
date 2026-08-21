@@ -3,3 +3,4 @@ pdfplumber
 pandas
 reportlab
 supabase
+requests
