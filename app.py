@@ -42,16 +42,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. KONEKSI SUPABASE DENGAN ERROR HANDLING
+# 2. KONEKSI SUPABASE (LANGSUNG / TANPA SECRETS)
 # ==========================================
 @st.cache_resource
 def init_supabase() -> Client:
     try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
+        # Menggunakan kredensial langsung agar bebas dari error Secrets
+        url = "https://kmdggpfsrabkjlbztuu.supabase.co"
+        key = "sb_publishable_OSF90--G5BnumFC2AKN2WQ_h8Zo5_h8Zo5_h8Zo5_h8Zo5_h8Zo5_h8Zo5"
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Gagal terhubung ke Supabase. Periksa pengaturan 'Secrets' Anda di Streamlit Cloud. Detail: {e}")
+        st.error(f"Gagal terhubung ke Supabase: {e}")
         st.stop()
 
 supabase = init_supabase()
@@ -425,11 +426,11 @@ else:
                 url_bank = row_v.get('url_bank')
 
                 with col_doc1:
-                    st.write("**📄 Dokumen Laporan Realisasi Anggaran (LRA)**")
+                    st.write("**📄 Dokumen Realisasi Belanja (SIPD)**")
                     if url_sipd:
-                        st.link_button("👁️ Buka / Pratinjau PDF LRA", url_sipd)
+                        st.link_button("👁️ Buka / Pratinjau PDF SIPD", url_sipd)
                     else:
-                        st.warning("⚠️ File PDF LRA tidak tersedia / belum diunggah.")
+                        st.warning("⚠️ File PDF SIPD tidak tersedia / belum diunggah.")
 
                 with col_doc2:
                     st.write("**📄 Dokumen Catatan BKU (ARKAS)**")
