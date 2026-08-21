@@ -7,7 +7,7 @@ import pandas as pd
 import pdfplumber
 import streamlit as st
 from datetime import datetime
-from PIL import Image as PILImage  # Dikenalkan untuk membaca logo dengan aman
+from PIL import Image as PILImage
 from supabase import create_client, Client
 
 from reportlab.lib.pagesizes import letter
@@ -86,7 +86,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
 
     logo_img = None
     logo_path = "logo.png"
-    logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Lambang_Kabupaten_Buol.png/480px-Lambang_Kabupaten_Buol.png"
+    logo_url = "https://i.ibb.co.com/zTtKR1f5/logo-png.png"
 
     # 1. Cek dari file lokal (logo.png) menggunakan Pillow
     if os.path.exists(logo_path):
@@ -99,7 +99,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
         except Exception:
             logo_img = None
 
-    # 2. Jika tidak ada/gagal muat dari file lokal, unduh dari URL backup
+    # 2. Jika tidak ada/gagal muat dari file lokal, unduh dari URL
     if not logo_img:
         try:
             res = requests.get(logo_url, timeout=5)
