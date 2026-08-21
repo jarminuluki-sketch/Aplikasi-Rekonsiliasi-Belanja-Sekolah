@@ -77,6 +77,27 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
+# --- HELPER HELPER KONVERSI TANGGAL BAHASA INDONESIA ---
+def get_tanggal_indonesia_terbilang(dt=None):
+    if not dt:
+        dt = datetime.now()
+    
+    hari_map = {
+        'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu',
+        'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu', 'Sunday': 'Minggu'
+    }
+    bulan_map = {
+        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April', 5: 'Mei', 6: 'Juni',
+        7: 'Juli', 8: 'Agustus', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+    }
+    
+    hari = hari_map.get(dt.strftime('%A'), dt.strftime('%A'))
+    tanggal = dt.day
+    bulan = bulan_map.get(dt.month, '')
+    tahun = dt.year
+    
+    return hari, str(tanggal), bulan, str(tahun)
+
 # --- HELPER PARSING PDF ---
 def parse_pdf(file):
     all_rows = []
@@ -112,12 +133,26 @@ def auto_detect_columns(df):
     if not ang_col and len(cols) > 3: ang_col = cols[3]
     return tgl_col, nom_col, ket_col, ang_col
 
-# --- GENERATE PDF BAR DENGAN LOGO PEMDA ---
-def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
+# --- GENERATE PDF BAR DENGAN FORMAT BIODATA PEJABAT ---
+def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_rekon, biodata_sekolah=None):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=30, rightMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
     story = []
+
+    # Format Waktu
+    try:
+        dt_obj = datetime.strptime(tanggal_submit_str, "%Y-%m-%d %H:%M")
+    except:
+        dt_obj = datetime.now()
+        
+    hari_str, tgl_str, bln_str, thn_str = get_tanggal_indonesia_terbilang(dt_obj)
+
+    # Default Biodata jika Kosong
+    if not biodata_sekolah:
+        biodata_sekolah = {
+            'nama': '-', 'nip': '-', 'pangkat': '-', 'jabatan': 'Bendahara / Operator Sekolah', 'unit_kerja': sekolah_name
+        }
 
     # --- KOP SURAT DENGAN LOGO PEMDA ---
     header_text = [
@@ -130,7 +165,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
     logo_path = "logo.png"
     logo_url = "https://i.ibb.co.com/zTtKR1f5/logo-png.png"
 
-    # 1. Cek dari file lokal (logo.png) menggunakan Pillow
     if os.path.exists(logo_path):
         try:
             pil_img = PILImage.open(logo_path)
@@ -141,7 +175,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
         except Exception:
             logo_img = None
 
-    # 2. Jika tidak ada/gagal muat dari file lokal, unduh dari URL
     if not logo_img:
         try:
             res = requests.get(logo_url, timeout=5)
@@ -151,7 +184,6 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
         except Exception:
             logo_img = None
 
-    # Render Tabel Kop
     if logo_img:
         header_table_data = [[logo_img, header_text]]
         header_table = Table(header_table_data, colWidths=[60, 490])
@@ -165,21 +197,41 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
             story.append(text_item)
 
     story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=2, color=colors.black, spaceBefore=0, spaceAfter=10))
+    story.append(HRFlowable(width="100%", thickness=2, color=colors.black, spaceBefore=0, spaceAfter=8))
 
     # --- JUDUL BERITA ACARA ---
     story.append(Paragraph("BERITA ACARA REKONSILIASI (BAR) BELANJA SEKOLAH", ParagraphStyle('T', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=11, alignment=1, spaceAfter=10)))
     
-    style_meta = ParagraphStyle('Meta', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=12)
-    story.append(Paragraph(f"<b>Nama Sekolah:</b> {sekolah_name}", style_meta))
-    story.append(Paragraph(f"<b>Tanggal Rekonsiliasi:</b> {tanggal_submit}", style_meta))
-    story.append(Paragraph(f"<b>Status Verifikasi:</b> {status_rekon}", style_meta))
+    style_body = ParagraphStyle('BodyTextCustom', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=13)
+    style_bold = ParagraphStyle('BodyBoldCustom', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=13)
+
+    # Kalimat Utama Pembuka BAR
+    pembuka_text = f"Pada Hari ini <b>{hari_str}</b> Tanggal <b>{tgl_str}</b> Bulan <b>{bln_str}</b> Tahun <b>{thn_str}</b>, kami yang bertanda tangan di bawah ini:"
+    story.append(Paragraph(pembuka_text, style_body))
+    story.append(Spacer(1, 6))
+
+    # --- TABEL BIODATA PENANDATANGAN SEKOLAH ---
+    bio_table_data = [
+        [Paragraph("1.", style_body), Paragraph("Nama", style_body), Paragraph(":", style_body), Paragraph(f"<b>{biodata_sekolah.get('nama', '-')}</b>", style_body)],
+        [Paragraph("", style_body), Paragraph("NIP", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('nip', '-'), style_body)],
+        [Paragraph("", style_body), Paragraph("Pangkat / Gol. Ruang", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('pangkat', '-'), style_body)],
+        [Paragraph("", style_body), Paragraph("Jabatan", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('jabatan', '-'), style_body)],
+        [Paragraph("", style_body), Paragraph("Unit Kerja", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('unit_kerja', sekolah_name), style_body)],
+    ]
+    
+    t_bio = Table(bio_table_data, colWidths=[15, 120, 10, 405])
+    t_bio.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+        ('TOPPADDING', (0,0), (-1,-1), 1),
+    ]))
+    story.append(t_bio)
     story.append(Spacer(1, 8))
 
-    story.append(Paragraph("Pada hari ini telah dilakukan rekonsiliasi data pencatatan Belanja Sekolah antara Laporan Realisasi Belanja (SIPD) dengan Catatan BKU (ARKAS) dengan hasil rincian sebagai berikut:", style_meta))
-    story.append(Spacer(1, 10))
+    story.append(Paragraph("Telah melakukan rekonsiliasi data pencatatan Belanja Sekolah antara Laporan Realisasi Belanja (SIPD) dengan Catatan BKU (ARKAS) dengan hasil rincian sebagai berikut:", style_body))
+    story.append(Spacer(1, 8))
 
-    # --- TABEL DETAIL ---
+    # --- TABEL DETAIL REKONSILIASI ---
     hdr_s = ParagraphStyle('TH', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, alignment=1, textColor=colors.whitesmoke)
     table_data = [[
         Paragraph("No", hdr_s), Paragraph("Uraian Program / Kegiatan", hdr_s),
@@ -230,13 +282,26 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ecf0f1')),
     ]))
     story.append(t)
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph(f"Demikian Berita Acara Rekonsiliasi Belanja {sekolah_name} ini dibuat dengan sebenarnya untuk dipergunakan sebagaimana mestinya.", style_body))
     story.append(Spacer(1, 15))
 
-    story.append(Paragraph(f"Demikian Berita Acara Rekonsiliasi Belanja {sekolah_name} ini dibuat untuk dipergunakan sebagaimana mestinya.", style_meta))
-    story.append(Spacer(1, 25))
-
     # --- TANDA TANGAN ---
-    ttd_data = [["Bendahara / Operator Sekolah", "Tim Rekonsiliasi Dinas"], ["\n\n\n__________________", "\n\n\n__________________"]]
+    nama_p = biodata_sekolah.get('nama', '....................')
+    nip_p = biodata_sekolah.get('nip', '....................')
+
+    ttd_data = [
+        [
+            Paragraph(f"<b>Yang Menyerahkan:</b><br/>{biodata_sekolah.get('jabatan', 'Bendahara Sekolah')}", ParagraphStyle('TTDC', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1)),
+            Paragraph("<b>Yang Menerima:</b><br/>Tim Rekonsiliasi Dinas", ParagraphStyle('TTDC2', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
+        ],
+        [Paragraph("<br/><br/><br/>", style_body), Paragraph("<br/><br/><br/>", style_body)],
+        [
+            Paragraph(f"<b><u>{nama_p}</u></b><br/>NIP. {nip_p}", ParagraphStyle('TTDN', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1)),
+            Paragraph("<b><u>Tim Verifikasi Dinas</u></b><br/>NIP. ....................", ParagraphStyle('TTDN2', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
+        ]
+    ]
     t_ttd = Table(ttd_data, colWidths=[275, 275])
     t_ttd.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
     story.append(t_ttd)
@@ -350,6 +415,16 @@ else:
                 row_v = df_p[df_p['id'] == selected_sec].iloc[0]
                 
                 st.info(f"**Sekolah:** {row_v['nama_sekolah']} | **Tanggal Submit:** {row_v['tanggal_submit']} | **Status Saat Ini:** `{row_v['status']}`")
+
+                # Buka Biodata jika ada
+                bio_info = json.loads(row_v['biodata_json']) if row_v.get('biodata_json') else {}
+                with st.expander("👤 Informasi Biodata Penandatangan/Pengirim Sekolah", expanded=True):
+                    col_b1, col_b2 = st.columns(2)
+                    col_b1.write(f"**Nama:** {bio_info.get('nama', row_v.get('nama_penandatangan', '-'))}")
+                    col_b1.write(f"**NIP:** {bio_info.get('nip', row_v.get('nip_penandatangan', '-'))}")
+                    col_b1.write(f"**Pangkat/Gol. Ruang:** {bio_info.get('pangkat', row_v.get('pangkat_penandatangan', '-'))}")
+                    col_b2.write(f"**Jabatan:** {bio_info.get('jabatan', row_v.get('jabatan_penandatangan', '-'))}")
+                    col_b2.write(f"**Unit Kerja:** {bio_info.get('unit_kerja', row_v.get('unit_kerja', row_v['nama_sekolah']))}")
 
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Transaksi Cocok", f"{row_v['total_matched']}")
@@ -488,8 +563,16 @@ else:
 
                 st.write(f"**Sekolah:** {row_d['nama_sekolah']} | **Status Verifikasi:** `{row_d['status']}`")
                 
+                bio_info = json.loads(row_d['biodata_json']) if row_d.get('biodata_json') else {
+                    'nama': row_d.get('nama_penandatangan', '-'),
+                    'nip': row_d.get('nip_penandatangan', '-'),
+                    'pangkat': row_d.get('pangkat_penandatangan', '-'),
+                    'jabatan': row_d.get('jabatan_penandatangan', 'Bendahara Sekolah'),
+                    'unit_kerja': row_d.get('unit_kerja', row_d['nama_sekolah'])
+                }
+
                 detail_items = json.loads(row_d['detail_json']) if row_d.get('detail_json') else []
-                pdf_bar = generate_bar_pdf(row_d['nama_sekolah'], row_d['tanggal_submit'], detail_items, row_d['status'])
+                pdf_bar = generate_bar_pdf(row_d['nama_sekolah'], row_d['tanggal_submit'], detail_items, row_d['status'], bio_info)
 
                 st.download_button(
                     label="🖨️ Unduh Berita Acara (PDF BAR)",
@@ -563,29 +646,82 @@ else:
                         m3.metric("Gantung BKU", f"{len(only_bank)} Transaksi")
 
                     if 'rekon_temp' in st.session_state:
-                        if st.button("📤 Kirim Hasil ke Admin Dinas"):
-                            res = st.session_state['rekon_temp']
-                            supabase.table("hasil_rekon").insert({
-                                'username': user['username'],
-                                'nama_sekolah': user['nama_sekolah'],
-                                'tanggal_submit': datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                'total_matched': res['matched'],
-                                'total_only_sipd': res['only_sipd'],
-                                'total_only_bank': res['only_bank'],
-                                'nominal_cocok': float(res['nom_cocok']),
-                                'status': 'Menunggu Verifikasi',
-                                'catatan_admin': '',
-                                'detail_json': json.dumps(res['detail_items'])
-                            }).execute()
+                        st.markdown("---")
+                        st.write("### 📝 Lengkapi Biodata Pejabat / Penandatangan Sekolah")
+                        st.caption("Data ini akan ditampilkan di Berita Acara Rekonsiliasi (BAR).")
+                        
+                        # --- FORM INPUT BIODATA LENGKAP SEKOLAH ---
+                        col_bio1, col_bio2 = st.columns(2)
+                        with col_bio1:
+                            input_nama = st.text_input("Nama Lengkap Pejabat/Bendahara:", placeholder="Contoh: Ahmad Yani, S.Pd.")
+                            input_nip = st.text_input("NIP:", placeholder="Contoh: 19850101 201001 1 001")
+                            input_pangkat = st.text_input("Pangkat / Gol. Ruang:", placeholder="Contoh: Penata / III/c")
+                        with col_bio2:
+                            input_jabatan = st.text_input("Jabatan:", value="Bendahara BOS", placeholder="Contoh: Bendahara BOS / Kepala Sekolah")
+                            input_unit = st.text_input("Unit Kerja:", value=user['nama_sekolah'])
 
-                            st.balloons()
-                            st.success("Hasil rekonsiliasi berhasil terkirim ke Admin Dinas untuk diverifikasi!")
-                            del st.session_state['rekon_temp']
+                        if st.button("📤 Kirim Hasil ke Admin Dinas", type="primary"):
+                            if not input_nama.strip() or not input_nip.strip():
+                                st.warning("⚠️ Mohon isi Nama dan NIP penandatangan terlebih dahulu.")
+                            else:
+                                res = st.session_state['rekon_temp']
+                                biodata_payload = {
+                                    'nama': input_nama.strip(),
+                                    'nip': input_nip.strip(),
+                                    'pangkat': input_pangkat.strip(),
+                                    'jabatan': input_jabatan.strip(),
+                                    'unit_kerja': input_unit.strip()
+                                }
+
+                                try:
+                                    supabase.table("hasil_rekon").insert({
+                                        'username': user['username'],
+                                        'nama_sekolah': user['nama_sekolah'],
+                                        'tanggal_submit': datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                        'total_matched': res['matched'],
+                                        'total_only_sipd': res['only_sipd'],
+                                        'total_only_bank': res['only_bank'],
+                                        'nominal_cocok': float(res['nom_cocok']),
+                                        'status': 'Menunggu Verifikasi',
+                                        'catatan_admin': '',
+                                        'detail_json': json.dumps(res['detail_items']),
+                                        'biodata_json': json.dumps(biodata_payload),
+                                        'nama_penandatangan': input_nama.strip(),
+                                        'nip_penandatangan': input_nip.strip(),
+                                        'pangkat_penandatangan': input_pangkat.strip(),
+                                        'jabatan_penandatangan': input_jabatan.strip(),
+                                        'unit_kerja': input_unit.strip()
+                                    }).execute()
+
+                                    st.balloons()
+                                    st.success("Hasil rekonsiliasi beserta biodata berhasil terkirim ke Admin Dinas!")
+                                    del st.session_state['rekon_temp']
+                                except Exception as e:
+                                    # Fallback jika kolom individual belum dibuat di supabase
+                                    try:
+                                        supabase.table("hasil_rekon").insert({
+                                            'username': user['username'],
+                                            'nama_sekolah': user['nama_sekolah'],
+                                            'tanggal_submit': datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                            'total_matched': res['matched'],
+                                            'total_only_sipd': res['only_sipd'],
+                                            'total_only_bank': res['only_bank'],
+                                            'nominal_cocok': float(res['nom_cocok']),
+                                            'status': 'Menunggu Verifikasi',
+                                            'catatan_admin': '',
+                                            'detail_json': json.dumps(res['detail_items']),
+                                            'biodata_json': json.dumps(biodata_payload)
+                                        }).execute()
+                                        st.balloons()
+                                        st.success("Hasil rekonsiliasi berhasil terkirim!")
+                                        del st.session_state['rekon_temp']
+                                    except Exception as ex:
+                                        st.error(f"Gagal menyimpan data: {ex}")
 
         # TAB RIWAYAT SEKOLAH DENGAN RINGKASAN AKUMULASI BULANAN
         with tab_history:
             res_h = supabase.table("hasil_rekon")\
-                .select("tanggal_submit, status, catatan_admin, total_matched, total_only_sipd, total_only_bank, nominal_cocok")\
+                .select("tanggal_submit, status, catatan_admin, total_matched, total_only_sipd, total_only_bank, nominal_cocok, biodata_json")\
                 .eq("username", user['username'])\
                 .order("id", desc=True)\
                 .execute()
@@ -605,14 +741,14 @@ else:
 
                 st.divider()
                 st.write("#### 📜 Detail Riwayat Pengiriman")
-                st.dataframe(df_h, use_container_width=True)
+                st.dataframe(df_h[['tanggal_submit', 'status', 'nominal_cocok', 'total_matched', 'total_only_sipd', 'total_only_bank', 'catatan_admin']], use_container_width=True)
             else:
                 st.info("Belum ada riwayat pengiriman.")
 
 # --- FOOTER DI BAGIAN BAWAH HALAMAN ---
 st.markdown("""
     <div class="footer-container">
-        <div class="footer-spirit">🔥 Semangat Tim Rekonsiliasi! 💪</div>
+        <div class="footer-spirit">🔥 Semangat Tim Verifikasi! 💪</div>
         <div class="footer-copyright">
             © 2026 Dinas Pendidikan dan Kebudayaan Kabupaten Buol. Hak Cipta Dilindungi Undang-Undang.
         </div>
