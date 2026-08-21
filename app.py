@@ -209,6 +209,15 @@ if 'logged_in' not in st.session_state:
 if 'user_info' not in st.session_state:
     st.session_state['user_info'] = {}
 
+# --- RUNNING TEXT DIBAGIAN ATAS ---
+st.markdown("""
+    <div style="background-color: #eef2f5; padding: 10px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #dcdfe3;">
+        <marquee behavior="scroll" direction="left" scrollamount="8" style="font-size: 30px; font-weight: bold; color: #1e3a8a;">
+            📢 Mari lakukan rekonsiliasi secara berkala dengan teliti dan disiplin. Data yang tertib menjadi dasar pelaporan yang akurat, tepat waktu, dan dapat dipertanggungjawabkan. Rekonsiliasi rutin, laporan semakin berkualitas!
+        </marquee>
+    </div>
+""", unsafe_allow_html=True)
+
 # --- AUTENTIKASI ---
 st.sidebar.title("🔐 Keamanan Sistem")
 
