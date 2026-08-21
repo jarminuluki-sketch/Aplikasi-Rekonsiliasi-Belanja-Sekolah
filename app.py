@@ -1,13 +1,16 @@
 import json
 import io
 import os
+import requests
+from io import BytesIO
 import pandas as pd
 import pdfplumber
 import streamlit as st
 from datetime import datetime
 from supabase import create_client, Client
+
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -80,19 +83,38 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
         Paragraph("Alamat : Jl. Batalipu Kel. Leok II Kecamatan Biau - Kode Pos : 94563", ParagraphStyle('H3', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
     ]
 
-    # Cek ketersediaan file logo
-    logo_path = "logo.png"  # Pastikan menyimpan file gambar logo dengan nama logo.png di folder proyek
+    logo_img = None
+    logo_path = "logo.png"
+    # URL cadangan untuk logo Pemda Buol jika file logo.png tidak ada di server/repository
+    logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Lambang_Kabupaten_Buol.png/480px-Lambang_Kabupaten_Buol.png"
+
+    # 1. Cek dari file lokal
     if os.path.exists(logo_path):
-        logo_img = Image(logo_path, width=55, height=65)
+        try:
+            logo_img = RLImage(logo_path, width=50, height=60)
+        except Exception:
+            logo_img = None
+
+    # 2. Jika tidak ada file lokal, unduh dari URL
+    if not logo_img:
+        try:
+            res = requests.get(logo_url, timeout=5)
+            if res.status_code == 200:
+                img_data = BytesIO(res.content)
+                logo_img = RLImage(img_data, width=50, height=60)
+        except Exception:
+            logo_img = None
+
+    # Render Tabel Kop
+    if logo_img:
         header_table_data = [[logo_img, header_text]]
-        header_table = Table(header_table_data, colWidths=[65, 485])
+        header_table = Table(header_table_data, colWidths=[60, 490])
         header_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('ALIGN', (0, 0), (0, 0), 'CENTER'),
         ]))
         story.append(header_table)
     else:
-        # Jika file logo tidak ditemukan, tampilkan teks kop saja tanpa error
         for text_item in header_text:
             story.append(text_item)
 
