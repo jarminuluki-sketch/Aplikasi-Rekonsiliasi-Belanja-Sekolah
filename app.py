@@ -440,11 +440,11 @@ else:
                 url_bank = row_v.get('url_bank')
 
                 with col_doc1:
-                    st.write("**📄 Dokumen Realisasi Belanja (SIPD)**")
+                    st.write("**📄 Dokumen Laporan Realisasi Anggaran (LRA)**")
                     if url_sipd:
                         st.link_button("👁️ Buka / Pratinjau PDF SIPD", url_sipd)
                     else:
-                        st.warning("⚠️ File PDF SIPD tidak tersedia / belum diunggah.")
+                        st.warning("⚠️ File PDF LRA tidak tersedia / belum diunggah.")
 
                 with col_doc2:
                     st.write("**📄 Dokumen Catatan BKU (ARKAS)**")
@@ -781,7 +781,7 @@ else:
 # ==========================================
 st.markdown("""
     <div class="footer-container" style="margin-top: 50px; padding: 20px; background-color: rgba(255, 255, 255, 0.9); border-top: 3px solid #15803d; border-radius: 10px 10px 0 0; text-align: center; color: #14532d;">
-        <div style="font-size: 20px; font-weight: bold; color: #15803d; margin-bottom: 5px;">🔥 Semangat Tim Verifikasi! 💪</div>
+        <div style="font-size: 20px; font-weight: bold; color: #15803d; margin-bottom: 5px;">🔥 Semangat Dalam Melakukan Verifikasi! 💪</div>
         <div style="font-size: 13px; color: #4b5563;">
             © 2026 Dinas Pendidikan dan Kebudayaan Kabupaten Buol. Hak Cipta Dilindungi Undang-Undang.
         </div>
