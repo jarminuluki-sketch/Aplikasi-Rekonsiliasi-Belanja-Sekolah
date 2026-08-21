@@ -133,9 +133,10 @@ def auto_detect_columns(df):
     if not ang_col and len(cols) > 3: ang_col = cols[3]
     return tgl_col, nom_col, ket_col, ang_col
 
-# --- GENERATE PDF BAR DENGAN FORMAT BIODATA PEJABAT ---
+# --- GENERATE PDF BAR DENGAN PERBAIKAN UKURAN TABEL ---
 def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_rekon, biodata_sekolah=None):
     buffer = io.BytesIO()
+    # Halaman Letter = 612 x 792 pt. Margin Kiri/Kanan = 30 pt -> Lebar Tersedia = 552 pt.
     doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=30, rightMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
     story = []
@@ -154,8 +155,8 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
 
     # Kop Surat
     header_text = [
-        Paragraph("PEMERINTAH KABUPATEN BUOL", ParagraphStyle('H1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=1)),
-        Paragraph("DINAS PENDIDIKAN DAN KEBUDAYAAN", ParagraphStyle('H2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, alignment=1)),
+        Paragraph("PEMERINTAH KABUPATEN BUOL", ParagraphStyle('H1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, alignment=1)),
+        Paragraph("DINAS PENDIDIKAN DAN KEBUDAYAAN", ParagraphStyle('H2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=1)),
         Paragraph("Alamat : Jl. Batalipu Kel. Leok II Kecamatan Biau - Kode Pos : 94563", ParagraphStyle('H3', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
     ]
 
@@ -169,7 +170,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
             img_byte_arr = BytesIO()
             pil_img.save(img_byte_arr, format='PNG')
             img_byte_arr.seek(0)
-            logo_img = RLImage(img_byte_arr, width=50, height=60)
+            logo_img = RLImage(img_byte_arr, width=45, height=55)
         except Exception:
             logo_img = None
 
@@ -178,16 +179,18 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
             res = requests.get(logo_url, timeout=5)
             if res.status_code == 200:
                 img_data = BytesIO(res.content)
-                logo_img = RLImage(img_data, width=50, height=60)
+                logo_img = RLImage(img_data, width=45, height=55)
         except Exception:
             logo_img = None
 
     if logo_img:
-        header_table_data = [[logo_img, header_text]]
-        header_table = Table(header_table_data, colWidths=[60, 490])
+        # Total = 50 + 500 = 550 pt (Aman)
+        header_table = Table([[logo_img, header_text]], colWidths=[50, 500])
         header_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
         ]))
         story.append(header_table)
     else:
@@ -206,7 +209,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph(pembuka_text, style_body))
     story.append(Spacer(1, 6))
 
-    # Biodata
+    # Biodata - Total colWidths = 15 + 115 + 10 + 400 = 540 pt (Aman)
     bio_table_data = [
         [Paragraph("1.", style_body), Paragraph("Nama", style_body), Paragraph(":", style_body), Paragraph(f"<b>{biodata_sekolah.get('nama', '-')}</b>", style_body)],
         [Paragraph("", style_body), Paragraph("NIP", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('nip', '-'), style_body)],
@@ -215,11 +218,13 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         [Paragraph("", style_body), Paragraph("Unit Kerja", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('unit_kerja', sekolah_name), style_body)],
     ]
     
-    t_bio = Table(bio_table_data, colWidths=[15, 120, 10, 405])
+    t_bio = Table(bio_table_data, colWidths=[15, 115, 10, 400])
     t_bio.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('BOTTOMPADDING', (0,0), (-1,-1), 1),
         ('TOPPADDING', (0,0), (-1,-1), 1),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
     ]))
     story.append(t_bio)
     story.append(Spacer(1, 8))
@@ -227,7 +232,8 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph("Telah melakukan rekonsiliasi data pencatatan Belanja Sekolah antara Laporan Realisasi Belanja (SIPD) dengan Catatan BKU (ARKAS) dengan hasil rincian sebagai berikut:", style_body))
     story.append(Spacer(1, 8))
 
-    # Tabel Rincian
+    # Tabel Rincian Rekonsiliasi
+    # Total Lebar = 20 + 160 + 70 + 70 + 70 + 70 + 60 = 520 pt (Aman & Presisi)
     hdr_s = ParagraphStyle('TH', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, alignment=1, textColor=colors.whitesmoke)
     table_data = [[
         Paragraph("No", hdr_s), Paragraph("Uraian Program / Kegiatan", hdr_s),
@@ -270,12 +276,16 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         Paragraph(f"<b>Rp {tot_sisa:,.2f}</b>", tot_s), Paragraph("-", b_c)
     ])
 
-    t = Table(table_data, colWidths=[20, 175, 70, 70, 70, 75, 70], repeatRows=1)
+    t = Table(table_data, colWidths=[20, 160, 70, 70, 70, 70, 60], repeatRows=1)
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ('SPAN', (0, -1), (1, -1)),
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ecf0f1')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
     ]))
     story.append(t)
     story.append(Spacer(1, 10))
@@ -283,7 +293,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph(f"Demikian Berita Acara Rekonsiliasi Belanja {sekolah_name} ini dibuat dengan sebenarnya untuk dipergunakan sebagaimana mestinya.", style_body))
     story.append(Spacer(1, 15))
 
-    # Tanda Tangan
+    # Tanda Tangan - Total = 260 + 260 = 520 pt
     nama_p = biodata_sekolah.get('nama', '....................')
     nip_p = biodata_sekolah.get('nip', '....................')
 
@@ -298,8 +308,12 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
             Paragraph("<b><u>Tim Verifikasi Dinas</u></b><br/>NIP. ....................", ParagraphStyle('TTDN2', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
         ]
     ]
-    t_ttd = Table(ttd_data, colWidths=[275, 275])
-    t_ttd.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
+    t_ttd = Table(ttd_data, colWidths=[260, 260])
+    t_ttd.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
     story.append(t_ttd)
 
     doc.build(story)
