@@ -128,18 +128,19 @@ def auto_detect_columns(df):
     if not ang_col and len(cols) > 3: ang_col = cols[3]
     return tgl_col, nom_col, ket_col, ang_col
 
-# --- GENERATE PDF BAR (UKURAN LEGAL DAN PERBAIKAN LEBAR TABEL) ---
+# --- GENERATE PDF BAR (UKURAN LEGAL DENGAN LEBAR KOLOM AMAN) ---
 def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_rekon, biodata_sekolah=None, biodata_admin=None):
     buffer = io.BytesIO()
     
-    # Kertas Legal: 612 pt x 1008 pt. Area Cetak Bersih = 612 - 30 - 30 = 552 pt.
+    # Kertas Legal: 612 pt x 1008 pt.
+    # Margin Kiri 36 pt, Kanan 36 pt -> Lebar Maksimal Konten = 540 pt.
     doc = SimpleDocTemplate(
         buffer, 
         pagesize=legal, 
-        leftMargin=30, 
-        rightMargin=30, 
-        topMargin=30, 
-        bottomMargin=30
+        leftMargin=36, 
+        rightMargin=36, 
+        topMargin=36, 
+        bottomMargin=36
     )
     styles = getSampleStyleSheet()
     story = []
@@ -163,7 +164,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
             'unit_kerja': 'Dinas Pendidikan dan Kebudayaan'
         }
 
-    # KOP SURAT (Total lebar = 45 + 500 = 545 pt)
+    # KOP SURAT (Total lebar = 40 + 480 = 520 pt)
     header_text = [
         Paragraph("PEMERINTAH KABUPATEN BUOL", ParagraphStyle('H1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, alignment=1)),
         Paragraph("DINAS PENDIDIKAN DAN KEBUDAYAAN", ParagraphStyle('H2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=1)),
@@ -180,7 +181,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
             img_byte_arr = BytesIO()
             pil_img.save(img_byte_arr, format='PNG')
             img_byte_arr.seek(0)
-            logo_img = RLImage(img_byte_arr, width=40, height=50)
+            logo_img = RLImage(img_byte_arr, width=35, height=45)
         except Exception:
             logo_img = None
 
@@ -189,12 +190,12 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
             res = requests.get(logo_url, timeout=5)
             if res.status_code == 200:
                 img_data = BytesIO(res.content)
-                logo_img = RLImage(img_data, width=40, height=50)
+                logo_img = RLImage(img_data, width=35, height=45)
         except Exception:
             logo_img = None
 
     if logo_img:
-        header_table = Table([[logo_img, header_text]], colWidths=[45, 500])
+        header_table = Table([[logo_img, header_text]], colWidths=[40, 480])
         header_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('ALIGN', (0, 0), (0, 0), 'CENTER'),
@@ -219,7 +220,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph(pembuka_text, style_body))
     story.append(Spacer(1, 6))
 
-    # IDENTITAS DUA PIHAK (Total lebar = 120 + 10 + 410 = 540 pt)
+    # IDENTITAS DUA PIHAK (Total lebar = 110 + 10 + 400 = 520 pt)
     story.append(Paragraph("1. Pihak Pertama (Pengirim / Sekolah):", style_bold_label))
     bio_sekolah_table = [
         [Paragraph("Nama", style_body), Paragraph(":", style_body), Paragraph(f"<b>{biodata_sekolah.get('nama', '-')}</b>", style_body)],
@@ -228,12 +229,13 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         [Paragraph("Jabatan", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('jabatan', '-'), style_body)],
         [Paragraph("Unit Kerja", style_body), Paragraph(":", style_body), Paragraph(biodata_sekolah.get('unit_kerja', sekolah_name), style_body)],
     ]
-    t_bio1 = Table(bio_sekolah_table, colWidths=[120, 10, 410])
+    t_bio1 = Table(bio_sekolah_table, colWidths=[110, 10, 400])
     t_bio1.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('BOTTOMPADDING', (0,0), (-1,-1), 1),
         ('TOPPADDING', (0,0), (-1,-1), 1),
-        ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 2),
+        ('RIGHTPADDING', (0,0), (-1,-1), 2),
     ]))
     story.append(t_bio1)
     story.append(Spacer(1, 4))
@@ -246,12 +248,13 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         [Paragraph("Jabatan", style_body), Paragraph(":", style_body), Paragraph(biodata_admin.get('jabatan', '-'), style_body)],
         [Paragraph("Unit Kerja", style_body), Paragraph(":", style_body), Paragraph(biodata_admin.get('unit_kerja', 'Dinas Pendidikan dan Kebudayaan'), style_body)],
     ]
-    t_bio2 = Table(bio_admin_table, colWidths=[120, 10, 410])
+    t_bio2 = Table(bio_admin_table, colWidths=[110, 10, 400])
     t_bio2.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('BOTTOMPADDING', (0,0), (-1,-1), 1),
         ('TOPPADDING', (0,0), (-1,-1), 1),
-        ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 2),
+        ('RIGHTPADDING', (0,0), (-1,-1), 2),
     ]))
     story.append(t_bio2)
     story.append(Spacer(1, 8))
@@ -260,7 +263,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Spacer(1, 8))
 
     # TABEL REKONSILIASI
-    # Total Lebar = 22 + 130 + 65 + 65 + 65 + 65 + 135 = 547 pt (Pas di bawah batas 552 pt)
+    # Total Lebar = 20 + 120 + 60 + 60 + 60 + 60 + 130 = 510 pt (Sangat aman di dalam batas 540 pt)
     hdr_s = ParagraphStyle('TH', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, alignment=1, textColor=colors.whitesmoke)
     table_data = [[
         Paragraph("No", hdr_s), Paragraph("Uraian Program / Kegiatan", hdr_s),
@@ -289,7 +292,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         if selisih < 1:
             keterangan_txt = "Pencatatan SIPD & BKU Cocok"
         else:
-            keterangan_txt = f"Selisih pencatatan Rp {selisih:,.2f}"
+            keterangan_txt = f"Selisih Rp {selisih:,.2f}"
 
         table_data.append([
             Paragraph(str(idx), b_c), Paragraph(str(item.get('uraian', '-')), b_s),
@@ -306,7 +309,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
         Paragraph(f"<b>Rp {tot_sisa:,.2f}</b>", tot_s), Paragraph("-", b_c)
     ])
 
-    t = Table(table_data, colWidths=[22, 130, 65, 65, 65, 65, 135], repeatRows=1)
+    t = Table(table_data, colWidths=[20, 120, 60, 60, 60, 60, 130], repeatRows=1)
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -323,7 +326,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph(f"Demikian Berita Acara Rekonsiliasi Belanja {sekolah_name} ini dibuat dengan sebenarnya untuk dipergunakan sebagaimana mestinya.", style_body))
     story.append(Spacer(1, 15))
 
-    # TANDA TANGAN DUA PIHAK (270 + 270 = 540 pt)
+    # TANDA TANGAN DUA PIHAK (255 + 255 = 510 pt)
     nama_p1 = biodata_sekolah.get('nama', '....................')
     nip_p1 = biodata_sekolah.get('nip', '....................')
     jab_p1 = biodata_sekolah.get('jabatan', 'Bendahara Sekolah')
@@ -343,7 +346,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
             Paragraph(f"<b><u>{nama_p1}</u></b><br/>NIP. {nip_p1}", ParagraphStyle('TTDN2', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
         ]
     ]
-    t_ttd = Table(ttd_data, colWidths=[270, 270])
+    t_ttd = Table(ttd_data, colWidths=[255, 255])
     t_ttd.setStyle(TableStyle([
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
@@ -632,21 +635,20 @@ else:
                 bio_info = json.loads(row_d['biodata_json']) if row_d.get('biodata_json') else {}
                 bio_admin_info = json.loads(row_d['biodata_admin_json']) if row_d.get('biodata_admin_json') else {}
                 detail_items = json.loads(row_d['detail_json']) if row_d.get('detail_json') else []
-                
-                # PDF HANYA DIGENERATE SAAT TOMBOL UNDUH DIKLIK (Mencegah Error di Tab Lain)
-                def get_pdf_bytes():
-                    return generate_bar_pdf(
-                        sekolah_name=row_d['nama_sekolah'], 
-                        tanggal_submit_str=row_d['tanggal_submit'], 
-                        detail_items=detail_items, 
-                        status_rekon=row_d['status'], 
-                        biodata_sekolah=bio_info,
-                        biodata_admin=bio_admin_info
-                    ).getvalue()
+
+                # Eksekusi PDF hanya saat tombol diakses
+                pdf_buffer = generate_bar_pdf(
+                    sekolah_name=row_d['nama_sekolah'], 
+                    tanggal_submit_str=row_d['tanggal_submit'], 
+                    detail_items=detail_items, 
+                    status_rekon=row_d['status'], 
+                    biodata_sekolah=bio_info,
+                    biodata_admin=bio_admin_info
+                )
 
                 st.download_button(
                     label="🖨️ Unduh Berita Acara Legal (PDF BAR)",
-                    data=get_pdf_bytes(),
+                    data=pdf_buffer.getvalue(),
                     file_name=f"BAR_Legal_{row_d['nama_sekolah'].replace(' ', '_')}.pdf",
                     mime="application/pdf"
                 )
