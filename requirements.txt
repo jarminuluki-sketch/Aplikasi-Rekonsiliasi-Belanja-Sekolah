@@ -1,7 +1,7 @@
 streamlit
-pdfplumber
-pandas
-reportlab
 supabase
+pandas
+pdfplumber
 requests
-Pillow
+reportlab
+pillow
