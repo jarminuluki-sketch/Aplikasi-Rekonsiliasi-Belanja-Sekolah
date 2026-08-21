@@ -15,14 +15,15 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-# --- KONFIGURASI HALAMAN ---
+# ==========================================
+# 1. KONFIGURASI HALAMAN & TEMA
+# ==========================================
 st.set_page_config(
     page_title="Aplikasi Rekonsiliasi Belanja Sekolah - Kab. Buol",
     page_icon="📊",
     layout="wide"
 )
 
-# --- INJEKSI CSS CUSTOM ---
 st.markdown("""
     <style>
     .stApp {
@@ -40,7 +41,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INISIALISASI SUPABASE ---
+# ==========================================
+# 2. KONEKSI SUPABASE
+# ==========================================
 @st.cache_resource
 def init_supabase() -> Client:
     try:
@@ -48,36 +51,40 @@ def init_supabase() -> Client:
         key = st.secrets["SUPABASE_KEY"]
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Gagal terhubung ke Supabase. Periksa Secrets Streamlit Anda. Error: {e}")
+        st.error(f"Gagal terhubung ke Supabase. Periksa st.secrets Anda. Detail: {e}")
         st.stop()
 
 supabase = init_supabase()
 
-# --- HELPER UPLOAD DOKUMEN KE SUPABASE STORAGE ---
+# ==========================================
+# 3. HELPER UPLOAD FILE KE SUPABASE STORAGE
+# ==========================================
 def upload_to_supabase_storage(file, bucket_name="dokumen-rekon", folder_prefix=""):
     try:
         file.seek(0)
         file_bytes = file.read()
         
-        # Penamaan file unik berdasarkan timestamp
+        # Buat nama file unik menggunakan timestamp
         filename = f"{folder_prefix}_{int(datetime.now().timestamp())}_{file.name.replace(' ', '_')}"
         path_on_supa = f"uploads/{filename}"
         
-        # Upload ke bucket Supabase
+        # Unggah ke bucket
         supabase.storage.from_(bucket_name).upload(
             path=path_on_supa,
             file=file_bytes,
             file_options={"content-type": "application/pdf"}
         )
         
-        # Ambil Public URL
+        # Ambil Public URL agar Admin bisa langsung membuka via browser
         public_url = supabase.storage.from_(bucket_name).get_public_url(path_on_supa)
         return public_url
     except Exception as e:
-        st.error(f"Gagal mengunggah berkas ke Storage: {e}")
+        st.error(f"Gagal mengunggah berkas ke Storage Supabase: {e}")
         return None
 
-# --- HELPER KONVERSI TANGGAL ---
+# ==========================================
+# 4. HELPER TANGGAL INDONESIA
+# ==========================================
 def get_tanggal_indonesia_terbilang(dt=None):
     if not dt:
         dt = datetime.now()
@@ -98,7 +105,9 @@ def get_tanggal_indonesia_terbilang(dt=None):
     
     return hari, str(tanggal), bulan, str(tahun)
 
-# --- HELPER PARSING PDF ---
+# ==========================================
+# 5. HELPER PARSING PDF & DETEKSI KOLOM
+# ==========================================
 def parse_pdf(file):
     file.seek(0)
     all_rows = []
@@ -134,10 +143,13 @@ def auto_detect_columns(df):
     if not ang_col and len(cols) > 3: ang_col = cols[3]
     return tgl_col, nom_col, ket_col, ang_col
 
-# --- GENERATE PDF BAR (UKURAN LEGAL DENGAN LEBAR KOLOM AMAN) ---
+# ==========================================
+# 6. GENERATOR BAR PDF (UKURAN LEGAL)
+# ==========================================
 def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_rekon, biodata_sekolah=None, biodata_admin=None):
     buffer = io.BytesIO()
     
+    # Margin 36pt (0.5 inci) -> Lebar printable = 540pt
     doc = SimpleDocTemplate(
         buffer, 
         pagesize=legal, 
@@ -238,7 +250,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     story.append(Paragraph("Telah melakukan rekonsiliasi data pencatatan Belanja Sekolah antara Laporan Realisasi Belanja (SIPD) dengan Catatan BKU (ARKAS) dengan hasil rincian sebagai berikut:", style_body))
     story.append(Spacer(1, 8))
 
-    # TABEL REKONSILIASI (Total Lebar = 510 pt)
+    # TABEL RINCIAN REKONSILIASI (Total Lebar = 510 pt)
     hdr_s = ParagraphStyle('TH', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, alignment=1, textColor=colors.whitesmoke)
     table_data = [[
         Paragraph("No", hdr_s), Paragraph("Uraian Program / Kegiatan", hdr_s),
@@ -318,11 +330,13 @@ def generate_bar_pdf(sekolah_name, tanggal_submit_str, detail_items, status_reko
     buffer.seek(0)
     return buffer
 
-# --- STATE SESSION LOGIN ---
+# ==========================================
+# 7. MANAJEMEN SESSION LOGIN
+# ==========================================
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user_info' not in st.session_state: st.session_state['user_info'] = {}
 
-# --- RUNNING TEXT ---
+# BANNER RUNNING TEXT
 st.markdown("""
     <div class="running-text-box">
         <marquee behavior="scroll" direction="left" scrollamount="8" style="font-size: 30px; font-weight: bold; color: #15803d;">
@@ -331,7 +345,7 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# --- AUTENTIKASI ---
+# SIDEBAR LOGIN
 st.sidebar.title("🔐 Keamanan Sistem")
 
 if not st.session_state['logged_in']:
@@ -372,7 +386,9 @@ else:
         st.session_state['user_info'] = {}
         st.rerun()
 
-# --- TAMPILAN UTAMA ---
+# ==========================================
+# 8. HALAMAN UTAMA APLIKASI
+# ==========================================
 st.title("📊 Aplikasi Rekonsiliasi Belanja Sekolah")
 st.caption("Dinas Pendidikan dan Kebudayaan Kabupaten Buol")
 
@@ -382,9 +398,9 @@ else:
     user = st.session_state['user_info']
     st.divider()
 
-    # ==========================================
+    # ------------------------------------------
     # ROLE: ADMIN DINAS
-    # ==========================================
+    # ------------------------------------------
     if user['role'] == 'admin':
         st.subheader("👨‍💼 Panel Administrator Dinas Pendidikan")
         tab_admin_verifikasi, tab_admin_users, tab_admin_rekon = st.tabs([
@@ -393,7 +409,7 @@ else:
             "📑 Rekapitulasi & BAR"
         ])
 
-        # TAB 1: VERIFIKASI BELANJA
+        # TAB 1: VERIFIKASI BELANJA SEKOLAH
         with tab_admin_verifikasi:
             st.write("### 🔍 Panel Verifikasi Belanja Sekolah")
             try:
@@ -415,7 +431,7 @@ else:
                 
                 st.info(f"**Sekolah:** {row_v['nama_sekolah']} | **Tanggal Submit:** {row_v['tanggal_submit']} | **Status Saat Ini:** `{row_v['status']}`")
 
-                # FITUR VALIDASI DOKUMEN PDF DARI SEKOLAH
+                # FITUR BARU: TOMBOL UNTUK MEMBUKA/VALIDASI PDF ASLI
                 st.markdown("---")
                 st.write("#### 📂 Validasi Dokumen Asli yang Diunggah Sekolah")
                 col_doc1, col_doc2 = st.columns(2)
@@ -616,9 +632,9 @@ else:
                     mime="application/pdf"
                 )
 
-    # ==========================================
+    # ------------------------------------------
     # ROLE: SEKOLAH / OPERATOR
-    # ==========================================
+    # ------------------------------------------
     else:
         st.subheader(f"Input & Pengolahan Data: {user['nama_sekolah']}")
         tab_input, tab_history = st.tabs(["📥 Unggah Dokumen & Rekon", "📜 Riwayat Pengiriman & Verifikasi"])
@@ -697,10 +713,10 @@ else:
                             if not input_nama.strip() or not input_nip.strip():
                                 st.warning("⚠️ Mohon isi Nama dan NIP penandatangan terlebih dahulu.")
                             else:
-                                with st.spinner("Mengunggah dokumen PDF ke storage & menyimpannya ke database..."):
-                                    # Unggah PDF ke Supabase Storage
-                                    url_s = upload_to_supabase_storage(pdf_sipd, folder_prefix=f"{user['username']}_SIPD")
-                                    url_b = upload_to_supabase_storage(pdf_bank, folder_prefix=f"{user['username']}_BKU")
+                                with st.spinner("Mengunggah dokumen PDF ke Storage Supabase & menyimpan laporan..."):
+                                    # 1. Unggah PDF ke Supabase Storage
+                                    url_s = upload_to_supabase_storage(pdf_sipd, bucket_name="dokumen-rekon", folder_prefix=f"{user['username']}_SIPD")
+                                    url_b = upload_to_supabase_storage(pdf_bank, bucket_name="dokumen-rekon", folder_prefix=f"{user['username']}_BKU")
 
                                     res = st.session_state['rekon_temp']
                                     biodata_payload = {
@@ -711,6 +727,7 @@ else:
                                         'unit_kerja': input_unit.strip()
                                     }
 
+                                    # 2. Simpan URL beserta data hasil rekon ke DB
                                     try:
                                         supabase.table("hasil_rekon").insert({
                                             'username': user['username'],
@@ -730,7 +747,7 @@ else:
                                         }).execute()
 
                                         st.balloons()
-                                        st.success("Dokumen asli dan hasil rekonsiliasi berhasil terkirim ke Admin Dinas!")
+                                        st.success("Dokumen PDF asli dan hasil rekonsiliasi berhasil terkirim ke Admin Dinas!")
                                         del st.session_state['rekon_temp']
                                     except Exception as ex:
                                         st.error(f"Gagal menyimpan data: {ex}")
@@ -759,7 +776,9 @@ else:
             except Exception as e:
                 st.error(f"Gagal memuat riwayat pengiriman: {e}")
 
-# --- FOOTER ---
+# ==========================================
+# 9. FOOTER APLIKASI
+# ==========================================
 st.markdown("""
     <div class="footer-container" style="margin-top: 50px; padding: 20px; background-color: rgba(255, 255, 255, 0.9); border-top: 3px solid #15803d; border-radius: 10px 10px 0 0; text-align: center; color: #14532d;">
         <div style="font-size: 20px; font-weight: bold; color: #15803d; margin-bottom: 5px;">🔥 Semangat Tim Verifikasi! 💪</div>
