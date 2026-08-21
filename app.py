@@ -178,7 +178,6 @@ if not st.session_state['logged_in']:
                 res = supabase.table("users").select("*").execute()
                 all_users = res.data if res.data else []
 
-                # PEMERIKSAAN / OTOMATISASI UNTUK AKUN ADMIN
                 matched_user = next((u for u in all_users if str(u.get('username', '')).strip().lower() == clean_user), None)
                 
                 if matched_user:
@@ -197,26 +196,6 @@ if not st.session_state['logged_in']:
                     st.sidebar.error("Username tidak ditemukan!")
             except Exception as e:
                 st.sidebar.error(f"Koneksi Supabase gagal: {e}")
-
-    st.sidebar.markdown("---")
-    # AKSES CEPAT / RECOVERY UNTUK ADMIN DINAS
-    if st.sidebar.button("🛠️ Masuk Langsung Sebagai Admin"):
-        try:
-            supabase.table("users").upsert({
-                'username': 'admin',
-                'password': 'admin',
-                'nama_sekolah': 'Admin Dinas Pendidikan',
-                'role': 'admin'
-            }, on_conflict='username').execute()
-        except:
-            pass
-        st.session_state['logged_in'] = True
-        st.session_state['user_info'] = {
-            'username': 'admin',
-            'nama_sekolah': 'Admin Dinas Pendidikan',
-            'role': 'admin'
-        }
-        st.rerun()
 
 else:
     user = st.session_state['user_info']
@@ -309,7 +288,7 @@ else:
             with col_add:
                 st.write("### ➕ Tambah Akun Baru")
                 with st.form("form_add_user"):
-                    new_username = st.text_input("Username")
+                    new_username = st.text_input("Username (Unik)")
                     new_password = st.text_input("Password", type="password")
                     new_nama_sekolah = st.text_input("Nama Instansi / Sekolah")
                     new_role = st.selectbox("Pilih Role / Hak Akses:", ["sekolah", "admin"])
@@ -317,16 +296,21 @@ else:
 
                     if submit_add:
                         if new_username and new_password and new_nama_sekolah:
+                            clean_u = new_username.lower().strip()
                             try:
-                                clean_u = new_username.lower().strip()
-                                supabase.table("users").insert({
-                                    'username': clean_u,
-                                    'password': new_password.strip(),
-                                    'nama_sekolah': new_nama_sekolah.strip(),
-                                    'role': new_role
-                                }).execute()
-                                st.success(f"Akun **{new_role.upper()}** ({new_nama_sekolah}) berhasil dibuat!")
-                                st.rerun()
+                                check_user = supabase.table("users").select("username").eq("username", clean_u).execute()
+                                
+                                if check_user.data and len(check_user.data) > 0:
+                                    st.warning(f"⚠️ Username '{clean_u}' sudah terdaftar! Silakan gunakan username lain.")
+                                else:
+                                    supabase.table("users").insert({
+                                        'username': clean_u,
+                                        'password': new_password.strip(),
+                                        'nama_sekolah': new_nama_sekolah.strip(),
+                                        'role': new_role
+                                    }).execute()
+                                    st.success(f"✅ Akun **{new_role.upper()}** ({new_nama_sekolah}) berhasil dibuat!")
+                                    st.rerun()
                             except Exception as e:
                                 st.error(f"Gagal menambah akun: {e}")
                         else:
