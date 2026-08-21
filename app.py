@@ -1,12 +1,13 @@
 import json
 import io
+import os
 import pandas as pd
 import pdfplumber
 import streamlit as st
 from datetime import datetime
 from supabase import create_client, Client
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -65,19 +66,40 @@ def auto_detect_columns(df):
     if not ang_col and len(cols) > 3: ang_col = cols[3]
     return tgl_col, nom_col, ket_col, ang_col
 
-# --- GENERATE PDF BAR ---
+# --- GENERATE PDF BAR DENGAN LOGO PEMDA ---
 def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=30, rightMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
     story = []
 
-    story.append(Paragraph("PEMERINTAH KABUPATEN BUOL", ParagraphStyle('H1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=1)))
-    story.append(Paragraph("DINAS PENDIDIKAN DAN KEBUDAYAAN", ParagraphStyle('H2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, alignment=1)))
-    story.append(Paragraph("Alamat : Jl. Batalipu Kel. Leok II Kecamatan Biau - Kode Pos : 94563", ParagraphStyle('H3', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1)))
+    # --- KOP SURAT DENGAN LOGO PEMDA ---
+    header_text = [
+        Paragraph("PEMERINTAH KABUPATEN BUOL", ParagraphStyle('H1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=1)),
+        Paragraph("DINAS PENDIDIKAN DAN KEBUDAYAAN", ParagraphStyle('H2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, alignment=1)),
+        Paragraph("Alamat : Jl. Batalipu Kel. Leok II Kecamatan Biau - Kode Pos : 94563", ParagraphStyle('H3', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1))
+    ]
+
+    # Cek ketersediaan file logo
+    logo_path = "logo.png"  # Pastikan menyimpan file gambar logo dengan nama logo.png di folder proyek
+    if os.path.exists(logo_path):
+        logo_img = Image(logo_path, width=55, height=65)
+        header_table_data = [[logo_img, header_text]]
+        header_table = Table(header_table_data, colWidths=[65, 485])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+        ]))
+        story.append(header_table)
+    else:
+        # Jika file logo tidak ditemukan, tampilkan teks kop saja tanpa error
+        for text_item in header_text:
+            story.append(text_item)
+
     story.append(Spacer(1, 4))
     story.append(HRFlowable(width="100%", thickness=2, color=colors.black, spaceBefore=0, spaceAfter=10))
 
+    # --- JUDUL BERITA ACARA ---
     story.append(Paragraph("BERITA ACARA REKONSILIASI (BAR) BELANJA SEKOLAH", ParagraphStyle('T', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=11, alignment=1, spaceAfter=10)))
     
     style_meta = ParagraphStyle('Meta', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=12)
@@ -89,6 +111,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
     story.append(Paragraph("Pada hari ini telah dilakukan rekonsiliasi data pencatatan Belanja Sekolah antara Laporan Realisasi Belanja (SIPD) dengan Catatan BKU (ARKAS) dengan hasil rincian sebagai berikut:", style_meta))
     story.append(Spacer(1, 10))
 
+    # --- TABEL DETAIL ---
     hdr_s = ParagraphStyle('TH', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, alignment=1, textColor=colors.whitesmoke)
     table_data = [[
         Paragraph("No", hdr_s), Paragraph("Uraian Program / Kegiatan", hdr_s),
@@ -144,6 +167,7 @@ def generate_bar_pdf(sekolah_name, tanggal_submit, detail_items, status_rekon):
     story.append(Paragraph(f"Demikian Berita Acara Rekonsiliasi Belanja {sekolah_name} ini dibuat untuk dipergunakan sebagaimana mestinya.", style_meta))
     story.append(Spacer(1, 25))
 
+    # --- TANDA TANGAN ---
     ttd_data = [["Bendahara / Operator Sekolah", "Tim Rekonsiliasi Dinas"], ["\n\n\n__________________", "\n\n\n__________________"]]
     t_ttd = Table(ttd_data, colWidths=[275, 275])
     t_ttd.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
