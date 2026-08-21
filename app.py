@@ -612,7 +612,7 @@ else:
 # --- FOOTER DI BAGIAN BAWAH HALAMAN ---
 st.markdown("""
     <div class="footer-container">
-        <div class="footer-spirit">🔥 Semangat Tim Verifikasi! 💪</div>
+        <div class="footer-spirit">🔥 Semangat Tim Rekonsiliasi! 💪</div>
         <div class="footer-copyright">
             © 2026 Dinas Pendidikan dan Kebudayaan Kabupaten Buol. Hak Cipta Dilindungi Undang-Undang.
         </div>
